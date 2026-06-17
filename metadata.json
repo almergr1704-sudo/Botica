@@ -1,0 +1,8 @@
+{
+  "name": "Control de Botica y POS",
+  "description": "Sistema ERP y POS completo para la gestión de boticas en Perú, con control estricto de lotes, vencimientos DIGEMID y facturación electrónica SUNAT.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
