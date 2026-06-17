@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ShoppingBag, Pill, CalendarClock, BookUser, Layers, ShieldCheck, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, Pill, CalendarClock, BookUser, Layers, ShieldCheck, ClipboardList, Users, History } from 'lucide-react';
 import { Sucursal, Producto, Lote, Cliente, Proveedor, Usuario, Venta, DetalleVenta } from './types/pharmacy';
 import { 
   INITIAL_SUCURSALES, 
@@ -19,9 +19,11 @@ import ClientSupplierManager from './components/ClientSupplierManager';
 import ArchitectureView from './components/ArchitectureView';
 import KardexPurchases from './components/KardexPurchases';
 import SunatAuditoriaDashboard from './components/SunatAuditoriaDashboard';
+import UserManager from './components/UserManager';
+import SalesHistory from './components/SalesHistory';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'pos' | 'products' | 'lots' | 'contacts' | 'architecture' | 'kardex' | 'sunat_control'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'pos' | 'products' | 'lots' | 'contacts' | 'architecture' | 'kardex' | 'sunat_control' | 'users' | 'sales_history'>('overview');
 
   // Database States loaded from LocalStorage or seed data
   const [branches, setBranches] = useState<Sucursal[]>([]);
@@ -30,6 +32,8 @@ export default function App() {
   const [clients, setClients] = useState<Cliente[]>([]);
   const [suppliers, setSuppliers] = useState<Proveedor[]>([]);
   const [sales, setSales] = useState<Venta[]>([]);
+  const [users, setUsers] = useState<Usuario[]>([]);
+  const [salesDetails, setSalesDetails] = useState<DetalleVenta[]>([]);
 
   // Selected User Session (Simulated)
   const [currentUser, setCurrentUser] = useState<Usuario>(INITIAL_USUARIOS[0]);
@@ -42,6 +46,8 @@ export default function App() {
     const localClients = localStorage.getItem('erp_clients');
     const localSuppliers = localStorage.getItem('erp_suppliers');
     const localSales = localStorage.getItem('erp_sales');
+    const localSalesDetails = localStorage.getItem('erp_sales_details');
+    const localUsers = localStorage.getItem('erp_users');
 
     if (localBranches) setBranches(JSON.parse(localBranches));
     else {
@@ -77,9 +83,47 @@ export default function App() {
     else {
       setSales([]);
     }
+
+    if (localSalesDetails) setSalesDetails(JSON.parse(localSalesDetails));
+    else {
+      setSalesDetails([]);
+    }
+
+    if (localUsers) {
+      const parsedUsers = JSON.parse(localUsers);
+      setUsers(parsedUsers);
+      // Auto-update standard logged-in user state just in case status changed
+      const currentExists = parsedUsers.find((u: Usuario) => u.id === currentUser.id);
+      if (currentExists) {
+        setCurrentUser(currentExists);
+      }
+    }
+    else {
+      setUsers(INITIAL_USUARIOS);
+      localStorage.setItem('erp_users', JSON.stringify(INITIAL_USUARIOS));
+    }
   }, []);
 
   // Update helper functions to push changes to state and LocalStorage
+  const handleAddUser = (newUser: Omit<Usuario, 'id'>) => {
+    const updated = [...users, { ...newUser, id: `usr-${Date.now()}` }];
+    setUsers(updated);
+    localStorage.setItem('erp_users', JSON.stringify(updated));
+  };
+
+  const handleToggleUserStatus = (userId: string) => {
+    const updated = users.map(u => u.id === userId ? { ...u, activo: !u.activo } : u);
+    setUsers(updated);
+    localStorage.setItem('erp_users', JSON.stringify(updated));
+    
+    // If the currently simulated user is toggled inactive, auto-rollback active session to Admin to simulate safe override
+    const targetUser = updated.find(u => u.id === userId);
+    if (targetUser && !targetUser.activo && currentUser.id === userId) {
+      const defaultAdmin = updated.find(u => u.rol === 'Administrador' && u.activo) || updated[0];
+      setCurrentUser(defaultAdmin);
+      alert(`La sesión activa para el usuario suspendido "${targetUser.username}" ha sido revocada por razones de seguridad de inicio de sesión.`);
+    }
+  };
   const handleAddProduct = (newProd: Omit<Producto, 'id'>) => {
     const updated = [...products, { ...newProd, id: `prod-${Date.now()}` }];
     setProducts(updated);
@@ -117,9 +161,18 @@ export default function App() {
   };
 
   const handleAddSale = (newSale: Venta, details: Omit<DetalleVenta, 'id' | 'id_venta'>[]) => {
-    const updated = [...sales, newSale];
-    setSales(updated);
-    localStorage.setItem('erp_sales', JSON.stringify(updated));
+    const updatedSales = [...sales, newSale];
+    setSales(updatedSales);
+    localStorage.setItem('erp_sales', JSON.stringify(updatedSales));
+
+    const finalDetails: DetalleVenta[] = details.map((d, index) => ({
+      ...d,
+      id: `det-${Date.now()}-${index}`,
+      id_venta: newSale.id
+    }));
+    const updatedDetails = [...salesDetails, ...finalDetails];
+    setSalesDetails(updatedDetails);
+    localStorage.setItem('erp_sales_details', JSON.stringify(updatedDetails));
   };
 
   // Deduce Lot Stock on purchase
@@ -273,6 +326,16 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeTab === 'users' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Users className="w-4 h-4 text-indigo-500" />
+              Personal & Accesos
+            </button>
+
+            <button
               onClick={() => setActiveTab('architecture')}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
                 activeTab === 'architecture' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'
@@ -290,6 +353,17 @@ export default function App() {
             >
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               SUNAT & Auditoría
+            </button>
+
+            <button
+              onClick={() => setActiveTab('sales_history')}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeTab === 'sales_history' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+              }`}
+              id="tab-history-comprobantes"
+            >
+              <History className="w-4 h-4 text-violet-600" />
+              Historial Comprobantes
             </button>
           </nav>
 
@@ -374,6 +448,17 @@ export default function App() {
           <ArchitectureView />
         )}
 
+        {activeTab === 'users' && (
+          <UserManager
+            branches={branches}
+            users={users}
+            onAddUser={handleAddUser}
+            onToggleUserStatus={handleToggleUserStatus}
+            currentUser={currentUser}
+            onSetCurrentUser={setCurrentUser}
+          />
+        )}
+
         {activeTab === 'sunat_control' && (
           <SunatAuditoriaDashboard
             products={products}
@@ -383,6 +468,17 @@ export default function App() {
             onUpdateLotStock={handleUpdateLotStock}
             onUpdateLotPrice={handleUpdateLotPrice}
             onDeleteProduct={handleDeleteProduct}
+          />
+        )}
+
+        {activeTab === 'sales_history' && (
+          <SalesHistory
+            sales={sales}
+            salesDetails={salesDetails}
+            branches={branches}
+            clients={clients}
+            users={users}
+            products={products}
           />
         )}
       </main>

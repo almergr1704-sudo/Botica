@@ -40,6 +40,7 @@ export interface Cliente {
   nombre_razon_social: string;
   direccion?: string;
   email?: string;
+  es_socio?: boolean; // True if the client is a registered Socio (preferential tariff)
 }
 
 export interface Proveedor {

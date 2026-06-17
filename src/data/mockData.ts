@@ -278,12 +278,22 @@ export const INITIAL_LOTES: Lote[] = [
 
 export const INITIAL_CLIENTES: Cliente[] = [
   {
+    id: 'cli-default',
+    tipo_documento: 'DNI',
+    numero_documento: '00000000',
+    nombre_razon_social: 'Clientes Varios (Anónimo)',
+    direccion: 'Venta Rápida al por menor, Lima',
+    email: '',
+    es_socio: false
+  },
+  {
     id: 'cli-01',
     tipo_documento: 'DNI',
     numero_documento: '45802145',
     nombre_razon_social: 'Alberto García Vargas',
     direccion: 'Jr. Libertad 421, Magdalena del Mar, Lima',
-    email: 'alberto.gv@gmail.com'
+    email: 'alberto.gv@gmail.com',
+    es_socio: true
   },
   {
     id: 'cli-02',
@@ -291,7 +301,8 @@ export const INITIAL_CLIENTES: Cliente[] = [
     numero_documento: '20601234567',
     nombre_razon_social: 'Clínica San Borja S.A.C.',
     direccion: 'Av. Guardia Civil 382, San Borja, Lima',
-    email: 'compras@clinicasanborja.com.pe'
+    email: 'compras@clinicasanborja.com.pe',
+    es_socio: false
   },
   {
     id: 'cli-03',
@@ -299,7 +310,8 @@ export const INITIAL_CLIENTES: Cliente[] = [
     numero_documento: '09845129',
     nombre_razon_social: 'María Elena Quispe Cárdenas',
     direccion: 'Calle Los Jazmines 104, Yanahuara, Arequipa',
-    email: 'maria.quispe@outlook.com'
+    email: 'maria.quispe@outlook.com',
+    es_socio: true
   },
   {
     id: 'cli-04',
@@ -307,7 +319,8 @@ export const INITIAL_CLIENTES: Cliente[] = [
     numero_documento: '41209845',
     nombre_razon_social: 'Juan Carlos Torres Paz',
     direccion: 'Av. Brasil 1420, Jesús María, Lima',
-    email: 'jupaz@gmail.com'
+    email: 'jupaz@gmail.com',
+    es_socio: false
   }
 ];
 

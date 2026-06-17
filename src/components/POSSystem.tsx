@@ -3,9 +3,15 @@ import {
   Search, ShoppingCart, Trash2, ShieldCheck, TicketCheck, Users, HelpCircle, 
   FileText, CheckCircle, RefreshCw, Send, AlertTriangle, Lock, Unlock, 
   DollarSign, ArrowUpRight, ArrowDownLeft, UploadCloud, FileImage, 
-  History, Eye, ClipboardCheck, Scale, AlertOctagon, Ban
+  History, Eye, ClipboardCheck, Scale, AlertOctagon, Ban, Printer, Download, Share2, Mail, ExternalLink, X
 } from 'lucide-react';
 import { Sucursal, Producto, Lote, Cliente, Usuario, Venta, DetalleVenta } from '../types/pharmacy';
+import { 
+  generateA4Document, 
+  generateTicketDocument, 
+  triggerDirectTicketPrint, 
+  DocumentContext 
+} from '../utils/documentGenerator';
 
 // Extended Interfaces for Cash Registers (Control de Caja Chica)
 interface EgresoMano {
@@ -57,20 +63,46 @@ export default function POSSystem({
 }: POSSystemProps) {
   // Config states & current branch
   const [selectedBranchId, setSelectedBranchId] = useState<string>('suc-01');
-  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [selectedClientId, setSelectedClientId] = useState<string>('cli-default');
   const [docType, setDocType] = useState<'Boleta' | 'Factura'>('Boleta');
   
   // Search state
   const [searchProductQuery, setSearchProductQuery] = useState('');
+  const [showSqlReference, setShowSqlReference] = useState<boolean>(false);
   const [errorPOSMessage, setErrorPOSMessage] = useState('');
   const [posSuccessMsg, setPosSuccessMsg] = useState('');
+
+  // Checkout Modal State & Multi-Method configurations
+  const [showCheckoutModal, setShowCheckoutModal] = useState<boolean>(false);
+  const [checkoutCashAmt, setCheckoutCashAmt] = useState<string>('0');
+  const [checkoutCashPaid, setCheckoutCashPaid] = useState<string>('');
+  const [checkoutYapeAmt, setCheckoutYapeAmt] = useState<string>('0');
+  const [checkoutYapeVoucher, setCheckoutYapeVoucher] = useState<string>('');
+  const [checkoutCardAmt, setCheckoutCardAmt] = useState<string>('0');
+  const [checkoutCardTerminal, setCheckoutCardTerminal] = useState<'Niubiz' | 'IziPay'>('Niubiz');
+  const [checkoutCardRef, setCheckoutCardRef] = useState<string>('');
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
   const [generatedTicket, setGeneratedTicket] = useState<any | null>(null);
 
+  // Print modal & context for the last processed sale
+  const [lastSaleContext, setLastSaleContext] = useState<DocumentContext | null>(null);
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [shareDialogExpanded, setShareDialogExpanded] = useState<boolean>(false);
+  const [shareChannel, setShareChannel] = useState<'whatsapp' | 'email'>('whatsapp');
+  const [shareInput, setShareInput] = useState<string>('');
+  const [shareToast, setShareToast] = useState<string>('');
+
   // Active cashier (Simulado)
-  const activeUser = users[2] || { id: 'usr-03', nombre: 'Sofía Quispe Pineda (Cajero)' };
+  const activeUser: Usuario = users[2] || { 
+    id: 'usr-03', 
+    username: 'sofia_caja', 
+    nombre: 'Sofía Quispe Pineda (Cajero)', 
+    rol: 'Cajero', 
+    id_sucursal: 'suc-01', 
+    activo: true 
+  };
 
   // --- PERSISTENCE & COMPILATION OF CASH SESSIONS (Cierre de Caja) ---
   const [sessionsHistory, setSessionsHistory] = useState<CashSession[]>([]);
@@ -362,11 +394,77 @@ export default function POSSystem({
   };
 
   // Core calculations
-  const cartSubtotal = cart.reduce((acc, curr) => acc + (curr.cantidad * curr.lote.precio_venta), 0);
+  const clientIsSocio = clients.find(c => c.id === selectedClientId)?.es_socio || false;
+  
+  const getCartItemUnitPrice = (item: CartItem) => {
+    // If the client is a Socio, they benefit from a preferential partner rate (15% discount) on the sales unit price
+    return clientIsSocio ? item.lote.precio_venta * 0.85 : item.lote.precio_venta;
+  };
+
+  const cartSubtotal = cart.reduce((acc, curr) => acc + (curr.cantidad * getCartItemUnitPrice(curr)), 0);
   const cartIgv = cartSubtotal * 0.18;
   const cartTotal = cartSubtotal + cartIgv;
 
-  // SUNAT validation and transaction recording
+  // Controller to open checkout payment wizard after standard validations
+  const handleOpenCheckoutModal = () => {
+    setErrorPOSMessage('');
+    setPosSuccessMsg('');
+
+    if (!activeSession) {
+      setErrorPOSMessage('Alerta: Caja Cerrada. Abra caja chica ingresando un monto de apertura antes de facturar.');
+      return;
+    }
+
+    if (cart.length === 0) {
+      setErrorPOSMessage('El carrito de ventas se encuentra vacío.');
+      return;
+    }
+
+    const clientObj = clients.find(c => c.id === selectedClientId);
+
+    // 1. Medical prescription validation
+    if (requiresRecipe) {
+      if (!recipeDoctorName.trim() || !recipeCMP.trim() || !recipeDate || !recipeFileAttached || !recipeCheckedByRegente) {
+        setErrorPOSMessage('DIGEMID Bloqueo: El carrito de ventas contiene medicamentos que exigen Receta Médica Obligatoria. No se puede facturar hasta rellenar los datos de prescripción, cargar la receta digital firmada y certificar su validez.');
+        return;
+      }
+      if (recipeCMP.trim().length < 5) {
+        setErrorPOSMessage('El número de Colegiatura Médica (CMP) ingresado parece incorrecto. Se exige un mínimo de 5 dígitos.');
+        return;
+      }
+    }
+
+    // 2. SUNAT RUC validation for Invoice
+    if (docType === 'Factura') {
+      if (!clientObj || clientObj.id === 'cli-default') {
+        setErrorPOSMessage('Para emitir Factura Electrónica SUNAT, debe seleccionar un cliente corporativo.');
+        return;
+      }
+      if (clientObj.tipo_documento !== 'RUC') {
+        setErrorPOSMessage('El cliente seleccionado tiene DNI o es anónimo. Se exige RUC para emitir Factura (IGV Crédito Fiscal).');
+        return;
+      }
+    }
+
+    // 3. SUNAT Cash threshold limit (customer identity is required on tickets >= S/. 700.00)
+    if (cartTotal >= 700 && (!clientObj || clientObj.id === 'cli-default')) {
+      setErrorPOSMessage('Normativa SUNAT: Compras superiores o iguales a S/ 700.00 de boleta requieren identificar plenamente al cliente (DNI o RUC obligatorios). El cliente anónimo no está permitido.');
+      return;
+    }
+
+    // Default checkout allocations to 100% Cash by default
+    setCheckoutCashAmt(cartTotal.toFixed(2));
+    setCheckoutCashPaid('');
+    setCheckoutYapeAmt('0');
+    setCheckoutYapeVoucher('');
+    setCheckoutCardAmt('0');
+    setCheckoutCardRef('');
+    setCheckoutCardTerminal('Niubiz');
+    
+    setShowCheckoutModal(true);
+  };
+
+  // SUNAT transaction final recording & state commits
   const handleProcessSale = () => {
     setErrorPOSMessage('');
     setPosSuccessMsg('');
@@ -383,34 +481,12 @@ export default function POSSystem({
 
     const clientObj = clients.find(c => c.id === selectedClientId);
 
-    // 1. Receta médica validation
+    // Double check prescription
     if (requiresRecipe) {
       if (!recipeDoctorName.trim() || !recipeCMP.trim() || !recipeDate || !recipeFileAttached || !recipeCheckedByRegente) {
-        setErrorPOSMessage('DIGEMID Bloqueo: El carrito de ventas contiene medicamentos que exigen Receta Médica Obligatoria. No se puede facturar hasta rellenar los datos de prescripción, cargar la receta digital firmada y certificar su validez.');
+        setErrorPOSMessage('DIGEMID Bloqueo: El carrito contiene medicamentos que exigen Receta Médica Obligatoria.');
         return;
       }
-      if (recipeCMP.trim().length < 5) {
-        setErrorPOSMessage('El número de Colegiatura Médica (CMP) ingresado parece incorrecto. Se exige un mínimo de 5 dígitos.');
-        return;
-      }
-    }
-
-    // 2. SUNAT RUC validation for Invoice
-    if (docType === 'Factura') {
-      if (!clientObj) {
-        setErrorPOSMessage('Para emitir Factura Electrónica SUNAT, debe seleccionar un cliente corporativo.');
-        return;
-      }
-      if (clientObj.tipo_documento !== 'RUC') {
-        setErrorPOSMessage('El cliente seleccionado tiene DNI. Se exige RUC para emitir Factura (IGV Crédito Fiscal).');
-        return;
-      }
-    }
-
-    // 3. SUNAT Cash limits
-    if (cartTotal >= 700 && !clientObj) {
-      setErrorPOSMessage('Normativa SUNAT: Compras superiores o iguales a S/ 700.00 requieren identificar al cliente (DNI o RUC obligatorios).');
-      return;
     }
 
     // Generate random mock billing numbers
@@ -424,7 +500,7 @@ export default function POSSystem({
       id: finalId,
       id_sucursal: selectedBranchId,
       id_usuario: activeUser.id,
-      id_cliente: selectedClientId || undefined,
+      id_cliente: selectedClientId === 'cli-default' ? undefined : selectedClientId,
       tipo_comprobante: docType,
       serie_comprobante: series,
       numero_comprobante: num_correlativo,
@@ -436,15 +512,18 @@ export default function POSSystem({
       estado_sunat: 'Aceptado'
     };
 
-    const detailRecords: Omit<DetalleVenta, 'id' | 'id_venta'>[] = cart.map(item => ({
-      id_producto: item.producto.id,
-      id_lote: item.lote.id,
-      numero_lote: item.lote.numero_lote,
-      cantidad: item.cantidad,
-      precio_unitario: item.lote.precio_venta,
-      igv_item: (item.cantidad * item.lote.precio_venta) * 0.18,
-      total_item: (item.cantidad * item.lote.precio_venta) * 1.18
-    }));
+    const detailRecords: Omit<DetalleVenta, 'id' | 'id_venta'>[] = cart.map(item => {
+      const discountedUnit = getCartItemUnitPrice(item);
+      return {
+        id_producto: item.producto.id,
+        id_lote: item.lote.id,
+        numero_lote: item.lote.numero_lote,
+        cantidad: item.cantidad,
+        precio_unitario: discountedUnit,
+        igv_item: (item.cantidad * discountedUnit) * 0.18,
+        total_item: (item.cantidad * discountedUnit) * 1.18
+      };
+    });
 
     // Trigger state changes in Parent (App.tsx)
     onAddSale(saleRecord, detailRecords);
@@ -454,10 +533,18 @@ export default function POSSystem({
       onDeductStock(item.lote.id, item.cantidad);
     });
 
-    // Update current active cash session revenues
+    // Extract exact cash flow breakdowns
+    const cashPortion = Number(checkoutCashAmt || 0);
+    const yapePortion = Number(checkoutYapeAmt || 0);
+    const cardPortion = Number(checkoutCardAmt || 0);
+
+    // Update current active cash session revenues with payment breakdown for audit trails
     const updatedSession: CashSession = {
       ...activeSession,
-      ventas_acumuladas: activeSession.ventas_acumuladas + cartTotal
+      ventas_acumuladas: activeSession.ventas_acumuladas + cartTotal,
+      ventas_efectivo: (activeSession.ventas_efectivo || 0) + cashPortion,
+      ventas_yape_plin: (activeSession.ventas_yape_plin || 0) + yapePortion,
+      ventas_tarjeta: (activeSession.ventas_tarjeta || 0) + cardPortion,
     };
     const updatedHistory = sessionsHistory.map(s => s.id === activeSession.id ? updatedSession : s);
     setSessionsHistory(updatedHistory);
@@ -466,7 +553,7 @@ export default function POSSystem({
 
     // Fill ticket print visual display
     const chosenBranch = branches.find(b => b.id === selectedBranchId);
-    setGeneratedTicket({
+    const ticketObj = {
       branchName: chosenBranch?.nombre,
       branchDir: chosenBranch?.direccion,
       branchCity: chosenBranch?.ciudad,
@@ -483,25 +570,71 @@ export default function POSSystem({
       hasRecipe: requiresRecipe,
       recipeDoctor: recipeDoctorName,
       recipeCmp: recipeCMP,
-      items: cart.map(item => ({
-        name: item.producto.nombre,
-        lot: item.lote.numero_lote,
-        qty: item.cantidad,
-        unit: item.lote.precio_venta,
-        tot: item.cantidad * item.lote.precio_venta * 1.18
-      }))
+      paymentSplit: {
+        cash: cashPortion,
+        yape: yapePortion,
+        card: cardPortion,
+        yapeRef: checkoutYapeVoucher,
+        cardRef: checkoutCardRef,
+        cardTerm: checkoutCardTerminal,
+        cashPaid: Number(checkoutCashPaid || 0)
+      },
+      items: cart.map(item => {
+        const discountedUnit = getCartItemUnitPrice(item);
+        return {
+          name: item.producto.nombre,
+          lot: item.lote.numero_lote,
+          qty: item.cantidad,
+          unit: discountedUnit,
+          tot: item.cantidad * discountedUnit * 1.18
+        };
+      })
+    };
+    setGeneratedTicket(ticketObj);
+
+    // Assembly of Document Context for real native printing and PDF generation
+    const detailsContextList = cart.map((item, index) => {
+      const discountedUnit = getCartItemUnitPrice(item);
+      return {
+        id: `det-${Date.now()}-${index}`,
+        id_venta: finalId,
+        id_producto: item.producto.id,
+        id_lote: item.lote.id,
+        numero_lote: item.lote.numero_lote,
+        cantidad: item.cantidad,
+        precio_unitario: discountedUnit,
+        igv_item: (item.cantidad * discountedUnit) * 0.18,
+        total_item: (item.cantidad * discountedUnit) * 1.18,
+        productoName: item.producto.nombre,
+        principioActivo: item.producto.principio_activo,
+        concentra: item.producto.concentracion
+      };
     });
+
+    const docContext: DocumentContext = {
+      sale: saleRecord,
+      details: detailsContextList,
+      branch: chosenBranch,
+      client: clientObj || undefined,
+      cashier: activeUser
+    };
+
+    setLastSaleContext(docContext);
+    setShowPrintModal(true);
+    setShareDialogExpanded(false);
+    setShareInput('');
 
     // Reset Form and State
     setCart([]);
-    setSelectedClientId('');
+    setSelectedClientId('cli-default'); // reset to default anon client!
     setRecipeDoctorName('');
     setRecipeCMP('');
     setRecipeDate('');
     setRecipeFileAttached(false);
     setRecipeFileMockName('');
     setRecipeCheckedByRegente(false);
-    setPosSuccessMsg('¡Venta facturada, declarada ante SUNAT, y registrada en arquéo de caja chica!');
+    setShowCheckoutModal(false); // Close payment wizard
+    setPosSuccessMsg('¡Venta facturada con éxito, registrada en arqueo, y ticket impreso!');
   };
 
   // Helper lots of current branch
@@ -509,11 +642,29 @@ export default function POSSystem({
   const availableProductIds = Array.from(new Set(activeBranchLots.map(l => l.id_producto)));
   const availableProducts = products.filter(p => availableProductIds.includes(p.id));
 
-  // Search filtered products
-  const filteredProducts = availableProducts.filter(p => {
-    return p.nombre.toLowerCase().includes(searchProductQuery.toLowerCase()) ||
-           p.principio_activo.toLowerCase().includes(searchProductQuery.toLowerCase());
-  });
+  // Search filtered products with robust multi-field predictive lookup (rebounding on >=3 characters)
+  const filteredProducts = (() => {
+    const query = searchProductQuery.trim().toLowerCase();
+    if (query.length < 3) return [];
+
+    const matched = availableProducts.filter(p => {
+      const matchBrand = p.nombre.toLowerCase().includes(query);
+      const matchGeneric = p.principio_activo.toLowerCase().includes(query);
+      const matchBarcode = p.codigo_barras.toLowerCase().includes(query);
+      const matchInternalId = p.id.toLowerCase().includes(query);
+      const matchLab = p.laboratorio.toLowerCase().includes(query);
+      const matchCat = p.categoria.toLowerCase().includes(query);
+
+      return matchBrand || matchGeneric || matchBarcode || matchInternalId || matchLab || matchCat;
+    });
+
+    // Sort descending by total branch stock to prioritize available alternatives
+    return matched.sort((a, b) => {
+      const stockA = activeBranchLots.filter(l => l.id_producto === a.id).reduce((sum, l) => sum + l.stock, 0);
+      const stockB = activeBranchLots.filter(l => l.id_producto === b.id).reduce((sum, l) => sum + l.stock, 0);
+      return stockB - stockA;
+    });
+  })();
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans text-xs">
@@ -648,88 +799,169 @@ export default function POSSystem({
             />
           </div>
 
-          {/* Lista de resultados filtrados */}
-          {searchProductQuery.length > 0 && activeSession && (
-            <div className="bg-white border border-slate-200 rounded-lg shadow-xl max-h-72 overflow-y-auto divide-y divide-slate-150">
+          {/* Aviso preventivo para ingreso menor a 3 caracteres */}
+          {searchProductQuery.trim().length > 0 && searchProductQuery.trim().length < 3 && activeSession && (
+            <div className="p-3 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg flex items-center gap-2 text-[11px] animate-in fade-in duration-200">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+              <div>
+                <span className="font-bold">Escribiendo término de búsqueda...</span>
+                <p className="text-[10px] text-slate-500 mt-0.5">Por favor ingrese al menos 3 caracteres para iniciar el motor predictivo multi-campo.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de resultados filtrados con Autocompletado */}
+          {searchProductQuery.trim().length >= 3 && activeSession && (
+            <div className="bg-white border border-slate-200 rounded-lg shadow-xl max-h-75 overflow-y-auto divide-y divide-slate-150 relative z-10 animate-in slide-in-from-top-1 duration-150">
               {filteredProducts.length === 0 ? (
-                <div className="p-4 text-center text-slate-400">
-                  No se encontraron medicamentos disponibles con lotes vigentes en esta sucursal.
+                <div className="p-5 text-center text-slate-400 space-y-2">
+                  <AlertOctagon className="w-7 h-7 text-slate-300 mx-auto" />
+                  <span className="block font-bold text-slate-500">No se encontraron medicamentos disponibles con lotes vigentes</span>
+                  <p className="text-[10px] text-slate-400 max-w-sm mx-auto leading-relaxed">
+                    Escriba otro principio activo o genérico para ver las marcas equivalentes que sí tengan stock en esta sucursal (ej: "Paracetamol", "Amoxicilina", "Portugal").
+                  </p>
                 </div>
               ) : (
-                filteredProducts.map(prod => {
-                  const productLots = activeBranchLots.filter(l => l.id_producto === prod.id);
-                  const totalStock = productLots.reduce((sum, l) => sum + l.stock, 0);
+                <>
+                  {/* Info Header suggesting generic match */}
+                  <div className="bg-slate-50 px-3 py-2 text-[10px] text-slate-500 font-semibold border-b border-slate-150 flex items-center justify-between">
+                    <span>Resultados del autocompletado inteligente (ordenados por stock disponible):</span>
+                    <span className="text-[9.5px] bg-indigo-50 text-indigo-700 px-1.5 py-0.2 rounded font-mono">
+                      {filteredProducts.length} marcas/fórmulas
+                    </span>
+                  </div>
 
-                  // Oldest lot recommended under FIFO
-                  const fifoLot = [...productLots].sort((a, b) => 
-                    new Date(a.fecha_vencimiento).getTime() - new Date(b.fecha_vencimiento).getTime()
-                  )[0];
+                  {filteredProducts.map(prod => {
+                    const productLots = activeBranchLots.filter(l => l.id_producto === prod.id);
+                    const totalStock = productLots.reduce((sum, l) => sum + l.stock, 0);
 
-                  return (
-                    <div key={prod.id} className="p-3 hover:bg-blue-50/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-extrabold text-slate-800 text-xs">{prod.nombre}</span>
-                          <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[9px] px-1.5 py-0.2 rounded">
-                            {prod.presentacion}
-                          </span>
-                          {prod.requiere_receta && (
-                            <span className="bg-red-50 text-red-700 border border-red-150 text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider flex items-center gap-0.5">
-                              <AlertOctagon className="w-3 h-3 text-red-500" />
-                              Receta Médica Obligatoria
+                    // Oldest lot recommended under FIFO
+                    const fifoLot = [...productLots].sort((a, b) => 
+                      new Date(a.fecha_vencimiento).getTime() - new Date(b.fecha_vencimiento).getTime()
+                    )[0];
+
+                    const isRecommAlternative = searchProductQuery.trim().toLowerCase() !== prod.nombre.toLowerCase();
+
+                    return (
+                      <div key={prod.id} className="p-3.5 hover:bg-indigo-50/25 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          {/* REQUIRED LINE FORMAT SPEC:
+                              [Nombre Comercial] + [Principio Activo] - [Presentación] | [Laboratorio] | Stock: [Cant.] | Precio: S/. [Monto] */}
+                          <div className="font-extrabold text-[11.5px] text-slate-800 leading-snug flex items-center flex-wrap gap-x-1 gap-y-0.5">
+                            <span className="text-blue-750 font-black">{prod.nombre}</span>
+                            <span className="text-slate-400 font-bold">+</span>
+                            <span className="text-indigo-650 font-bold">({prod.principio_activo})</span>
+                            <span className="text-slate-400 font-bold">-</span>
+                            <span className="text-slate-550 font-medium">{prod.presentacion}</span>
+                            <span className="text-slate-300 font-normal">|</span>
+                            <span className="text-amber-800 font-semibold">{prod.laboratorio}</span>
+                            <span className="text-slate-300 font-normal">|</span>
+                            <span className={`px-1 rounded-sm text-[10.5px] ${totalStock <= 20 ? 'text-red-700 bg-red-50 font-bold' : 'text-slate-850 font-extrabold'}`}>
+                              Stock: {totalStock}
+                            </span>
+                            <span className="text-slate-300 font-normal">|</span>
+                            <span className="text-emerald-700 bg-emerald-50/50 px-1 rounded font-black">
+                              Precio: S/. {fifoLot?.precio_venta.toFixed(2) || prod.precio_sugerido.toFixed(2)}
+                            </span>
+                          </div>
+
+                          {/* Secondary badges & tags for UI clarity */}
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded text-[8.5px] font-mono">
+                              BARCODE: {prod.codigo_barras} • COD_INT: {prod.id}
+                            </span>
+                            <span className="text-[9.5px] text-slate-400">
+                              Categoría: <span className="text-slate-600 font-medium">{prod.categoria}</span>
+                            </span>
+                            {prod.requiere_receta && (
+                              <span className="bg-rose-50 text-rose-700 border border-rose-150 text-[8.5px] px-1.5 py-px rounded font-extrabold uppercase tracking-wider flex items-center gap-0.5">
+                                <AlertOctagon className="w-3 h-3 text-rose-500" />
+                                Receta Obligatoria
+                              </span>
+                            )}
+                          </div>
+
+                          {fifoLot && (
+                            <span className="inline-block text-[9px] text-slate-500 font-medium bg-slate-50 px-1.5 py-0.5 rounded border border-slate-150 mt-1.5 font-mono">
+                              Próximo Lote a Vencer PEPS: <span className="text-amber-700 font-bold">{fifoLot.numero_lote}</span> (Expira: {fifoLot.fecha_vencimiento} | Stock: {fifoLot.stock} uds)
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-450 block mt-0.5">
-                          {prod.principio_activo} ({prod.concentracion}) • Lab: {prod.laboratorio} • Reg. San: {prod.registro_sanitario}
-                        </span>
-                        
-                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                          <span className="font-mono text-[10px] text-emerald-800 font-bold bg-emerald-50 px-1.5 rounded">
-                            S/ {fifoLot?.precio_venta.toFixed(2)} (Sugerido: S/ {prod.precio_sugerido.toFixed(2)})
-                          </span>
-                          <span className="text-[10px] text-slate-500">
-                            Stock Total Almacén: <strong className="text-slate-800">{totalStock} unidades</strong> (repartidas en {productLots.length} lotes)
-                          </span>
-                        </div>
 
-                        {fifoLot && (
-                          <span className="inline-block text-[9.5px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 mt-2 font-mono">
-                            Próximo Lote a Vencer: {fifoLot.numero_lote} (Expira: {fifoLot.fecha_vencimiento} | Stock: {fifoLot.stock})
-                          </span>
-                        )}
-                      </div>
-
-                      {/* FIFO automated fast-buy button */}
-                      <div className="flex items-center gap-1 bg-slate-50 p-1.5 rounded-lg border border-slate-205 self-stretch sm:self-auto justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-[9px] text-slate-450 font-bold pl-1 font-mono uppercase">Cant</span>
-                          <input
-                            type="number"
-                            id={`qty-fifo-${prod.id}`}
-                            defaultValue={1}
-                            min={1}
-                            max={totalStock}
-                            className="w-12 text-center text-xs font-bold border border-slate-205 bg-white rounded p-1 font-mono"
-                          />
+                        {/* FIFO automated fast-buy button */}
+                        <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-200 shrink-0 self-stretch sm:self-auto justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-[8.5px] text-slate-400 font-bold pl-1 font-mono uppercase">Cant</span>
+                            <input
+                              type="number"
+                              id={`qty-fifo-${prod.id}`}
+                              defaultValue={1}
+                              min={1}
+                              max={totalStock}
+                              className="w-12 text-center text-xs font-bold border border-slate-205 bg-white rounded p-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const inputEl = document.getElementById(`qty-fifo-${prod.id}`) as HTMLInputElement;
+                              const qty = inputEl ? Number(inputEl.value) : 1;
+                              handleAddProductFIFO(prod, qty);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white text-[10.5px] font-bold px-3 py-2 rounded transition-all shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer"
+                          >
+                            <RefreshCw className="w-3 h-3 animate-spin-slow" />
+                            Agregar
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const inputEl = document.getElementById(`qty-fifo-${prod.id}`) as HTMLInputElement;
-                            const qty = inputEl ? Number(inputEl.value) : 1;
-                            handleAddProductFIFO(prod, qty);
-                          }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white text-[10.5px] font-bold px-3 py-2 rounded transition-all shadow-sm flex items-center gap-0.5"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          Agregar FIFO
-                        </button>
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })}
+                </>
               )}
+            </div>
+          )}
+
+          {/* Developer Tools SQL Reference Toggle Button */}
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+            <span className="text-slate-400 font-mono text-[9px] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></span>
+              Algoritmo: Búsqueda Predictiva Multi-campo activa (mín. 3 chars)
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowSqlReference(!showSqlReference)}
+              className="text-indigo-600 hover:text-indigo-800 font-bold hover:underline py-0.5 px-2 rounded hover:bg-indigo-50/80 transition-colors cursor-pointer"
+            >
+              {showSqlReference ? "Ocultar Consulta SQL" : "🛠 Ver Consulta SQL (Backend)"}
+            </button>
+          </div>
+
+          {showSqlReference && (
+            <div className="bg-slate-900 border border-slate-800 text-slate-300 p-3.5 rounded-lg space-y-2 mt-2 leading-relaxed animate-in slide-in-from-top-1">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                <span className="font-extrabold text-[9.5px] uppercase tracking-wide text-indigo-400 font-mono flex items-center gap-1.5">
+                  📁 SQL Query Engine (PostgreSQL / SQLite Equivalent)
+                </span>
+                <span className="text-[8.5px] text-slate-500 font-mono">Búsqueda Unificada</span>
+              </div>
+              <p className="text-[9.5px] text-slate-400 font-sans">
+                Esta consulta optimizada con operadores <span className="font-mono text-white">ILIKE / OR</span> busca coincidencias simultáneas de marca, genérico, lote o laboratorio, previniendo la pérdida de ventas al sugerir de inmediato alternativas con stock disponible:
+              </p>
+              <pre className="text-[9px] text-indigo-300 font-mono bg-slate-950 p-2.5 rounded overflow-x-auto whitespace-pre">
+{`SELECT p.*, COALESCE(SUM(l.stock), 0) AS stock_total
+FROM productos p
+LEFT JOIN lotes l ON p.id = l.id_producto AND l.id_sucursal = :sucursal_id AND l.stock > 0
+WHERE 
+  p.nombre ILIKE :query_term          -- Nombre Comercial (ej: 'Apronax')
+  OR p.principio_activo ILIKE :query_term  -- Genérico (ej: 'Naproxeno')
+  OR p.codigo_barras ILIKE :query_term      -- Código de Barras Escaneado
+  OR p.id ILIKE :query_term                 -- Código de Producto Interno
+  OR p.laboratorio ILIKE :query_term       -- Laboratorio (ej: 'Bayer')
+  OR p.categoria ILIKE :query_term         -- Categoría (ej: 'Antibióticos')
+GROUP BY p.id
+ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
+              </pre>
             </div>
           )}
         </div>
@@ -970,31 +1202,50 @@ export default function POSSystem({
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-600 mb-1">Cliente Fiscal</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-[10px] font-bold text-slate-600">Cliente Fiscal</label>
+                {clientIsSocio && (
+                  <span className="bg-indigo-100 text-indigo-750 font-black text-[9px] px-2 py-0.5 rounded-full animate-pulse border border-indigo-250">
+                    ★ SOCIO PREFERENCIAL ACTIVO (-15%)
+                  </span>
+                )}
+              </div>
               <select
                 value={selectedClientId}
                 onChange={(e) => setSelectedClientId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-550 bg-slate-50 font-sans"
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 bg-slate-50 font-sans ${
+                  clientIsSocio 
+                    ? 'border-indigo-400 focus:ring-indigo-500 bg-indigo-50/10 text-indigo-900 font-extrabold'
+                    : 'border-slate-205 focus:ring-blue-550'
+                }`}
               >
-                <option value="">-- VARIOS / ANÓNIMO --</option>
                 {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.nombre_razon_social} ({c.tipo_documento} {c.numero_documento})</option>
+                  <option key={c.id} value={c.id}>
+                    {c.nombre_razon_social} ({c.tipo_documento} {c.numero_documento}){c.es_socio ? ' ★ SOCIO' : ''}
+                  </option>
                 ))}
               </select>
+
+              {clientIsSocio && (
+                <div className="bg-indigo-50 border border-indigo-150 p-2.5 rounded-lg text-indigo-900 text-[10px] mt-2 leading-relaxed animate-in slide-in-from-top-1">
+                  <span className="font-extrabold block">🏷 Tarifa de Socio Aplicada</span>
+                  <p className="text-[9.5px]">Los precios de venta del carro fueron reducidos en un 15% de descuento por afiliación.</p>
+                </div>
+              )}
             </div>
 
             {/* Checkbox Receta Block overlay block */}
             <button
-              onClick={handleProcessSale}
+              onClick={handleOpenCheckoutModal}
               disabled={cart.length === 0}
-              className={`w-full py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 shadow-xs border ${
+              className={`w-full py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 shadow-xs border cursor-pointer ${
                 cart.length === 0
                   ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-650'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-650 active:scale-95'
               }`}
             >
               <Send className="w-4 h-4" />
-              Facturar & Generar Boleta (s/ {cartTotal.toFixed(2)})
+              Abrir Pasarela de Pago (s/ {cartTotal.toFixed(2)})
             </button>
           </div>
         </div>
@@ -1270,6 +1521,224 @@ export default function POSSystem({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* VENTANA MODAL FLOTANTE (BOTONERA INTERFAZ POS DE COMPROBANTES) */}
+      {showPrintModal && lastSaleContext && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-150 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="bg-emerald-600 text-white p-5 relative">
+              <button 
+                onClick={() => setShowPrintModal(false)}
+                className="absolute top-4 right-4 text-emerald-100 hover:text-white p-1 hover:bg-emerald-700/55 rounded-full transition-colors"
+                id="pos-close-print-modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="bg-white/20 p-2 rounded-xl">
+                  <CheckCircle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base leading-snug">Venta Procesada Exitosamente</h3>
+                  <p className="text-emerald-100 text-[10.5px]">Comprobante firmado y aprobado de forma síncrona por SUNAT (OSE)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Metadata Recap */}
+            <div className="p-5 border-b border-slate-100 bg-slate-50 grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wide">Comprobante</span>
+                <span className="font-extrabold text-slate-700 text-xs">
+                  {lastSaleContext.sale.tipo_comprobante === 'Factura' ? 'Factura Electrónica' : 'Boleta de Venta'}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wide">Correlativo</span>
+                <span className="font-mono font-bold text-slate-800 text-xs">
+                  {lastSaleContext.sale.serie_comprobante}-{lastSaleContext.sale.numero_comprobante}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wide">Cliente</span>
+                <span className="font-semibold text-slate-600 truncate block">
+                  {lastSaleContext.client?.nombre_razon_social || 'Público General'}
+                </span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wide">Monto Cobrado</span>
+                <span className="font-bold font-black text-emerald-600 text-sm">
+                  S/ {lastSaleContext.sale.total.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons Grid */}
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* BUTTON 1: IMPRIMIR TICKET */}
+                <button
+                  onClick={() => triggerDirectTicketPrint(lastSaleContext)}
+                  className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition-all text-center group"
+                  id="btn-print-ticket-native"
+                >
+                  <Printer className="w-7 h-7 text-blue-600 mb-1.5 group-hover:scale-110 transition-transform" />
+                  <span className="font-bold text-slate-800 text-xs">Imprimir Ticket</span>
+                  <span className="text-[9px] text-slate-400 mt-0.5 leading-tight">Envío directo a ticketera (80mm) sin vista previa</span>
+                </button>
+
+                {/* BUTTON 2: DESCARGAR PDF */}
+                <button
+                  onClick={() => {
+                    const doc = generateA4Document(lastSaleContext);
+                    doc.save(`A4_${lastSaleContext.sale.tipo_comprobante === 'Factura' ? 'FA' : 'BO'}_${lastSaleContext.sale.serie_comprobante}-${lastSaleContext.sale.numero_comprobante}.pdf`);
+                  }}
+                  className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/50 transition-all text-center group"
+                  id="btn-download-pdf-a4"
+                >
+                  <Download className="w-7 h-7 text-emerald-600 mb-1.5 group-hover:scale-110 transition-transform" />
+                  <span className="font-bold text-slate-800 text-xs">Descargar PDF A4</span>
+                  <span className="text-[9px] text-slate-400 mt-0.5 leading-tight">Formato oficial A4 para descarga directa o archivo</span>
+                </button>
+              </div>
+
+              {/* Download alternative: Ticket PDF */}
+              <div className="bg-slate-50 border border-slate-150 p-2.5 rounded-lg flex justify-between items-center text-xs">
+                <span className="text-slate-500 text-[10px]">¿Desea descargar el Ticket Térmico en formato PDF?</span>
+                <button
+                  onClick={() => {
+                    const doc = generateTicketDocument(lastSaleContext);
+                    doc.save(`TICKET_${lastSaleContext.sale.tipo_comprobante === 'Factura' ? 'FA' : 'BO'}_${lastSaleContext.sale.serie_comprobante}-${lastSaleContext.sale.numero_comprobante}.pdf`);
+                  }}
+                  className="text-[10px] font-bold text-slate-700 hover:text-indigo-600 flex items-center gap-1 hover:underline"
+                >
+                  Descargar Ticket PDF
+                </button>
+              </div>
+
+              {/* BUTTON 3: ENVÍO DIGITAL (WHATSAPP / CORREO) */}
+              <div className="border border-slate-150 rounded-xl overflow-hidden">
+                <button
+                  onClick={() => {
+                    setShareDialogExpanded(!shareDialogExpanded);
+                    setShareToast('');
+                    // Autofill if client has details
+                    if (lastSaleContext.client?.email) {
+                      setShareInput(lastSaleContext.client.email);
+                      setShareChannel('email');
+                    } else {
+                      setShareInput('');
+                    }
+                  }}
+                  className="w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <Share2 className="w-4 h-4 text-indigo-600" />
+                    <div>
+                      <span className="font-bold text-xs text-slate-800 block">Enviar Comprobante Digital</span>
+                      <span className="text-[9.5px] text-slate-400 block mt-0.5">Enviar por WhatsApp o Correo electrónico</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-600 hover:underline">
+                    {shareDialogExpanded ? 'Ocultar' : 'Configurar'}
+                  </span>
+                </button>
+
+                {shareDialogExpanded && (
+                  <div className="p-4 bg-white border-t border-slate-150 space-y-3.5 animate-in slide-in-from-top-1 duration-200">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShareChannel('whatsapp');
+                          setShareInput('');
+                          setShareToast('');
+                        }}
+                        className={`flex-1 py-1.5 rounded-lg font-bold text-[10.5px] border cursor-pointer text-center ${
+                          shareChannel === 'whatsapp'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        WhatsApp
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShareChannel('email');
+                          setShareInput(lastSaleContext.client?.email || '');
+                          setShareToast('');
+                        }}
+                        className={`flex-1 py-1.5 rounded-lg font-bold text-[10.5px] border cursor-pointer text-center ${
+                          shareChannel === 'email'
+                            ? 'bg-blue-50 text-blue-800 border-blue-300'
+                            : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        Correo Electrónico
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        type={shareChannel === 'email' ? 'email' : 'tel'}
+                        placeholder={shareChannel === 'email' ? 'ejemplo@boticacorreo.com' : 'Ej: 994851203'}
+                        value={shareInput}
+                        onChange={(e) => setShareInput(e.target.value)}
+                        className="flex-1 px-3 py-1.5 border border-slate-250 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono text-xs text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!shareInput.trim()) {
+                            setShareToast('Por favor, complete el campo de contacto.');
+                            return;
+                          }
+                          const docLabel = `${lastSaleContext.sale.serie_comprobante}-${lastSaleContext.sale.numero_comprobante}`;
+                          if (shareChannel === 'whatsapp') {
+                            // Sanitized number digits only
+                            const numeric = shareInput.replace(/\D/g, '');
+                            const templateMessage = encodeURIComponent(`Estimado cliente de Botica Enterprise, le enviamos el comprobante digital ${lastSaleContext.sale.tipo_comprobante} N° ${docLabel} por un total de S/ ${lastSaleContext.sale.total.toFixed(2)}. Puede descargarlo en formato digital aquí: https://firmado-ose.sunat.gob.pe/consulta/${lastSaleContext.sale.hash_sunat}`);
+                            const targetUrl = `https://wa.me/${numeric.startsWith('51') ? '' : '51'}${numeric}?text=${templateMessage}`;
+                            window.open(targetUrl, '_blank');
+                            setShareToast(`¡Abriendo chat de WhatsApp para enviar el comprobante ${docLabel}!`);
+                          } else {
+                            // Simulated email dispatch
+                            setShareToast(`✔ ¡Enlace de descarga del comprobante ${docLabel} enviado exitosamente al correo ${shareInput}!`);
+                          }
+                        }}
+                        className="px-3.5 py-1.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs shadow-xs"
+                      >
+                        Enviar Enlace
+                      </button>
+                    </div>
+
+                    {shareToast && (
+                      <div className={`p-2 rounded text-[10px] text-center font-semibold ${
+                        shareToast.startsWith('✔') 
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-150' 
+                          : 'bg-amber-50 text-amber-800 border border-amber-150'
+                      }`}>
+                        {shareToast}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer control */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setShowPrintModal(false)}
+                className="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-900 border border-slate-950 text-white font-bold rounded-lg text-xs"
+              >
+                Terminar Venta & Volver al POS
+              </button>
+            </div>
           </div>
         </div>
       )}
