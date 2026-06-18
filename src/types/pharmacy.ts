@@ -19,6 +19,7 @@ export interface Producto {
   categoria: string; // e.g. "Analgesico", "Antibiotico", "Suplemento"
   requiere_receta: boolean;
   precio_sugerido: number;
+  activo?: boolean;
 }
 
 export interface Lote {
@@ -57,9 +58,11 @@ export interface Usuario {
   id: string;
   username: string;
   nombre: string;
-  rol: 'Administrador' | 'FarmaceuticoRegente' | 'Cajero';
+  rol: 'Administrador' | 'FarmaceuticoRegente' | 'Almacenero' | 'Cajero';
   id_sucursal: string;
   activo: boolean;
+  requiere_cambio_password?: boolean;
+  password?: string;
 }
 
 export interface Venta {
@@ -67,7 +70,7 @@ export interface Venta {
   id_sucursal: string;
   id_usuario: string;
   id_cliente?: string;
-  tipo_comprobante: 'Boleta' | 'Factura';
+  tipo_comprobante: 'Boleta' | 'Factura' | 'NotaCredito';
   serie_comprobante: string; // e.g., "F001" or "B001"
   numero_comprobante: string; // e.g., "000028"
   fecha_emision: string;
@@ -76,6 +79,9 @@ export interface Venta {
   total: number;
   hash_sunat: string; // simulated SUNAT hash signature
   estado_sunat: 'Aceptado' | 'Pendiente' | 'Rechazado';
+  id_venta_referencia?: string; // links Credit Notes to the original sale
+  motivo_anulacion?: string; // description of why the Credit Note was issued
+  estado?: 'Valido' | 'Anulado'; // status flag
 }
 
 export interface DetalleVenta {

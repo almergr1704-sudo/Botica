@@ -18,6 +18,7 @@ interface SalesHistoryProps {
   clients: Cliente[];
   users: Usuario[];
   products: Producto[];
+  onEmitCreditNote?: (originalSaleId: string, motivo: string) => void;
 }
 
 export default function SalesHistory({
@@ -26,7 +27,8 @@ export default function SalesHistory({
   branches,
   clients,
   users,
-  products
+  products,
+  onEmitCreditNote
 }: SalesHistoryProps) {
   // Search & Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,6 +45,11 @@ export default function SalesHistory({
   const [shareInput, setShareInput] = useState('');
   const [shareChannel, setShareChannel] = useState<'whatsapp' | 'email'>('whatsapp');
   const [shareToast, setShareToast] = useState('');
+
+  // Credit Note states for cancellation
+  const [ncTargetSaleId, setNcTargetSaleId] = useState<string | null>(null);
+  const [ncMotivoCode, setNcMotivoCode] = useState<string>('01');
+  const [ncDescription, setNcDescription] = useState<string>('');
 
   // Helper: Assemble full document context for a given sale
   const getSaleContext = (sale: Venta): DocumentContext => {
@@ -253,9 +260,10 @@ export default function SalesHistory({
                 onChange={(e) => setFilterDocType(e.target.value)}
                 className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs bg-white"
               >
-                <option value="all">Ver Todos (Boleta/Factura)</option>
+                <option value="all">Ver Todos (Boleta/Factura/Nota de Crédito)</option>
                 <option value="Boleta">Solo Boletas de Venta</option>
                 <option value="Factura">Solo Facturas de Venta</option>
+                <option value="NotaCredito">Solo Notas de Crédito</option>
               </select>
             </div>
 
@@ -357,17 +365,36 @@ export default function SalesHistory({
                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
                               sale.tipo_comprobante === 'Factura' 
                                 ? 'bg-indigo-100 text-indigo-800' 
+                                : sale.tipo_comprobante === 'NotaCredito'
+                                ? 'bg-purple-100 text-purple-800'
                                 : 'bg-amber-100 text-amber-800'
                             }`}>
-                              {sale.tipo_comprobante.slice(0, 3).toUpperCase()}
+                              {sale.tipo_comprobante === 'NotaCredito' ? 'N.CRÉDITO' : sale.tipo_comprobante.slice(0, 3).toUpperCase()}
                             </span>
-                            <span className="text-slate-800 font-extrabold">
+                            <span className={`font-extrabold ${sale.estado === 'Anulado' ? 'text-slate-400 line-through font-normal' : 'text-slate-800'}`}>
                               {sale.serie_comprobante}-{sale.numero_comprobante}
                             </span>
                           </div>
                           <span className="block text-[8px] text-slate-400 font-mono mt-0.5 truncate max-w-[120px]">
                             HASH: {sale.hash_sunat}
                           </span>
+                          {sale.estado === 'Anulado' && (
+                            <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-150 px-1.5 py-0.5 rounded text-[8px] font-bold mt-1">
+                              🚫 ANULADO CON NC
+                            </span>
+                          )}
+                          {sale.tipo_comprobante === 'NotaCredito' && (
+                            <div className="mt-1 select-none">
+                              <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-700 border border-purple-150 px-1.5 py-0.5 rounded text-[8.5px] font-black">
+                                💜 NOTA DE CRÉDITO
+                              </span>
+                              {sale.motivo_anulacion && (
+                                <span className="block text-[8px] text-purple-500 mt-0.5 max-w-[150px] truncate" title={sale.motivo_anulacion}>
+                                  Motivo: {sale.motivo_anulacion}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </td>
 
                         {/* Date and hour */}
@@ -454,6 +481,21 @@ export default function SalesHistory({
                             >
                               <Share2 className="w-4 h-4" />
                             </button>
+
+                            {/* EMIT CREDIT NOTE TRIGGER */}
+                            {onEmitCreditNote && sale.estado !== 'Anulado' && sale.tipo_comprobante !== 'NotaCredito' && (
+                              <button
+                                onClick={() => {
+                                  setNcTargetSaleId(sale.id);
+                                  setNcMotivoCode('01');
+                                  setNcDescription('Devolución de medicamento cerrado en perfectas condiciones');
+                                }}
+                                title="Anular con Nota de Crédito"
+                                className="p-1.5 hover:bg-red-50 hover:bg-red-100 rounded-lg text-red-600 hover:text-red-800 transition-all cursor-pointer font-bold text-xs"
+                              >
+                                🚫 NC
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -551,10 +593,10 @@ export default function SalesHistory({
                                     setShareInput('');
                                     setShareToast('');
                                   }}
-                                  className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] border cursor-pointer ${
+                                  className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] border cursor-pointer transition-all ${
                                     shareChannel === 'whatsapp'
-                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                      : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/45 text-emerald-800 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                                      : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-705'
                                   }`}
                                 >
                                   WhatsApp
@@ -566,10 +608,10 @@ export default function SalesHistory({
                                     setShareInput(ctx.client?.email || '');
                                     setShareToast('');
                                   }}
-                                  className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] border cursor-pointer ${
+                                  className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] border cursor-pointer transition-all ${
                                     shareChannel === 'email'
-                                      ? 'bg-blue-50 text-blue-800 border-blue-300'
-                                      : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                      ? 'bg-blue-50 dark:bg-blue-950/45 text-blue-800 dark:text-blue-400 border-blue-300 dark:border-blue-800'
+                                      : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-705'
                                   }`}
                                 >
                                   Correo Electrónico
@@ -614,6 +656,116 @@ export default function SalesHistory({
           </table>
         </div>
       </div>
+
+      {/* CREDIT NOTE GENERATION WIZARD MODAL */}
+      {ncTargetSaleId && (() => {
+        const targetSale = sales.find(s => s.id === ncTargetSaleId);
+        if (!targetSale) return null;
+        return (
+          <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl shadow-xl border border-slate-150 max-w-sm w-full overflow-hidden">
+              {/* Modal Header */}
+              <div className="px-5 py-3 border-b border-slate-150 flex justify-between items-center bg-slate-50 text-xs">
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-[10.5px] uppercase tracking-wider flex items-center gap-1.5 label-nc">
+                    🚫 Emitir Nota de Crédito (SUNAT)
+                  </h3>
+                  <p className="text-[9px] text-slate-450 mt-0.5">Anulación formal de la operación dispensada.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNcTargetSaleId(null)}
+                  className="text-slate-400 hover:text-slate-705 font-bold text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-4 space-y-3.5 text-xs font-sans text-slate-700">
+                <div className="p-2.5 bg-amber-50 border border-amber-200 text-slate-800 text-[10.5px] rounded-lg space-y-1">
+                  <span className="font-bold text-amber-800 block text-[10px]">⚠️ Directivas de Inmutabilidad Fiscal (SUNAT / DIGEMID)</span>
+                  <p className="text-[9.5px]/relaxed text-slate-650">
+                    Los registros de ventas y comprobantes asociados **NUNCA** pueden eliminarse físicamente ni modificarse. La única forma de anulación es mediante una **Nota de Crédito**, manteniendo trazabilidad de mermas y stocks.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-[10.5px]">
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 grid grid-cols-2 gap-2 text-[10px]">
+                    <div>
+                      <span className="text-slate-400 block text-[8px] uppercase">Comprobante Original</span>
+                      <strong className="text-slate-800 font-bold font-mono">
+                        {targetSale.tipo_comprobante.toUpperCase()} {targetSale.serie_comprobante}-{targetSale.numero_comprobante}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[8px] uppercase">Total a Revertir</span>
+                      <strong className="text-emerald-700 font-bold font-mono">
+                        S/ {targetSale.total.toFixed(2)}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9.5px] font-black text-slate-500 uppercase tracking-wide mb-1">
+                      Discrepancia SUNAT (Catálogo N° 09) *
+                    </label>
+                    <select
+                      value={ncMotivoCode}
+                      onChange={(e) => setNcMotivoCode(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-slate-205 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white text-xs text-slate-800"
+                    >
+                      <option value="01">01 - Anulación de la operación</option>
+                      <option value="02">02 - Anulación por error en el RUC / DNI</option>
+                      <option value="06">06 - Devolución total del medicamento</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9.5px] font-black text-slate-500 uppercase tracking-wide mb-1">
+                      Descripción Detallada del Motivo *
+                    </label>
+                    <textarea
+                      required
+                      value={ncDescription}
+                      onChange={(e) => setNcDescription(e.target.value)}
+                      placeholder="Ej: Empaque sellado devuelto en perfectas condiciones por el paciente. Reversión de stock."
+                      rows={2.5}
+                      className="w-full px-2.5 py-1.5 border border-slate-205 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50 text-slate-800 text-[11px]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setNcTargetSaleId(null)}
+                  className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-all text-[11px]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={!ncDescription.trim()}
+                  onClick={() => {
+                    const motivoText = `${ncMotivoCode === '01' ? 'Anulación de la operación' : ncMotivoCode === '02' ? 'Error en RUC/DNI' : 'Devolución total'} - ${ncDescription}`;
+                    if (onEmitCreditNote) {
+                      onEmitCreditNote(ncTargetSaleId, motivoText);
+                    }
+                    setNcTargetSaleId(null);
+                  }}
+                  className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all shadow-xs disabled:opacity-50 text-[11px]"
+                >
+                  Emitir NC
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }

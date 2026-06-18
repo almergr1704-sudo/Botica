@@ -1,17 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Filter, ShieldCheck, Check, AlertCircle, Sparkles } from 'lucide-react';
 import { Producto } from '../types/pharmacy';
+import TransactionalPagination from './TransactionalPagination';
 
 interface ProductCatalogProps {
   products: Producto[];
   onAddProduct: (newProduct: Omit<Producto, 'id'>) => void;
+  onUpdateProduct?: (product: Producto) => void;
+  onDeleteProduct?: (id: string) => void;
 }
 
-export default function ProductCatalog({ products, onAddProduct }: ProductCatalogProps) {
+export default function ProductCatalog({ 
+  products, 
+  onAddProduct,
+  onUpdateProduct,
+  onDeleteProduct
+}: ProductCatalogProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [requiresRecipeFilter, setRequiresRecipeFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Auto-reset to page 1 on search / filter modification
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, categoryFilter, requiresRecipeFilter]);
 
   // Form states
   const [newProdName, setNewProdName] = useState('');
@@ -25,6 +42,92 @@ export default function ProductCatalog({ products, onAddProduct }: ProductCatalo
   const [newProdRecipe, setNewProdRecipe] = useState(false);
   const [newProdPrice, setNewProdPrice] = useState(0.50);
   const [formError, setFormError] = useState('');
+
+  // Edit Product states
+  const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [epName, setEpName] = useState('');
+  const [epBarcode, setEpBarcode] = useState('');
+  const [epActive, setEpActive] = useState('');
+  const [epConcentration, setEpConcentration] = useState('');
+  const [epPresentation, setEpPresentation] = useState('');
+  const [epLab, setEpLab] = useState('');
+  const [epSanReg, setEpSanReg] = useState('');
+  const [epCategory, setEpCategory] = useState('');
+  const [epRecipe, setEpRecipe] = useState(false);
+  const [epActivo, setEpActivo] = useState(true);
+  const [epPrice, setEpPrice] = useState(0.50);
+  const [epError, setEpError] = useState('');
+
+  // Delete Product states
+  const [deletingProduct, setDeletingProduct] = useState<Producto | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Handlers for edit workflow
+  const handleStartEditProduct = (prod: Producto) => {
+    setEditingProduct(prod);
+    setEpName(prod.nombre);
+    setEpBarcode(prod.codigo_barras);
+    setEpActive(prod.principio_activo);
+    setEpConcentration(prod.concentracion);
+    setEpPresentation(prod.presentacion);
+    setEpLab(prod.laboratorio);
+    setEpSanReg(prod.registro_sanitario);
+    setEpCategory(prod.categoria);
+    setEpRecipe(prod.requiere_receta);
+    setEpActivo(prod.activo !== false);
+    setEpPrice(prod.precio_sugerido);
+    setEpError('');
+    setShowEditModal(true);
+  };
+
+  const handleSaveEditProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!epName || !epBarcode || !epActive || !epLab || !epSanReg || !epCategory) {
+      setEpError('Por favor complete todos los campos obligatorios (*).');
+      return;
+    }
+
+    const regSanPattern = /^[A-Z]{1,2}-\d+$/i;
+    if (!regSanPattern.test(epSanReg)) {
+      setEpError('El Registro Sanitario debe cumplir con el formato DIGEMID (ej: EE-04821 o NG-12048).');
+      return;
+    }
+
+    if (editingProduct && onUpdateProduct) {
+      onUpdateProduct({
+        ...editingProduct,
+        codigo_barras: epBarcode,
+        nombre: epName,
+        principio_activo: epActive,
+        concentracion: epConcentration || 'No especificada',
+        presentacion: epPresentation || 'Caja',
+        laboratorio: epLab,
+        registro_sanitario: epSanReg.toUpperCase(),
+        categoria: epCategory,
+        requiere_receta: epRecipe,
+        activo: epActivo,
+        precio_sugerido: Number(epPrice)
+      });
+    }
+
+    setShowEditModal(false);
+    setEditingProduct(null);
+  };
+
+  // Handlers for delete workflow
+  const handleStartDeleteProduct = (prod: Producto) => {
+    setDeletingProduct(prod);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDeleteProduct = () => {
+    if (deletingProduct && onDeleteProduct) {
+      onDeleteProduct(deletingProduct.id);
+    }
+    setShowDeleteConfirm(false);
+    setDeletingProduct(null);
+  };
 
   const laboratories = Array.from(new Set(products.map(p => p.laboratorio)));
   const categories = Array.from(new Set(products.map(p => p.categoria)));
@@ -152,63 +255,117 @@ export default function ProductCatalog({ products, onAddProduct }: ProductCatalo
             No se encontraron medicamentos con los filtros seleccionados.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left text-slate-600 font-sans">
-              <thead className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-                <tr>
-                  <th className="py-3 px-5">Código / Nombre</th>
-                  <th className="py-3 px-5">Principio Activo</th>
-                  <th className="py-3 px-5">Laboratorio</th>
-                  <th className="py-3 px-5">Reg. Sanitario DIGEMID</th>
-                  <th className="py-3 px-5">Exigencia</th>
-                  <th className="py-3 px-5 text-right">Pto. Sugerido</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredProducts.map(prod => (
-                  <tr key={prod.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-3 px-5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-800 text-sm">{prod.nombre}</span>
-                        <div className="flex gap-2 text-[10px] text-slate-400 mt-1">
-                          <span>{prod.presentacion}</span>
-                          <span>•</span>
-                          <span className="font-mono">{prod.codigo_barras}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-5">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-slate-700">{prod.principio_activo}</span>
-                        <span className="text-[10px] text-slate-400">{prod.concentracion}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-5 text-slate-500 font-medium">{prod.laboratorio}</td>
-                    <td className="py-3 px-5 font-mono">
-                      <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-0.5 rounded border border-slate-200 font-bold">
-                        {prod.registro_sanitario}
-                      </span>
-                    </td>
-                    <td className="py-3 px-5">
-                      {prod.requiere_receta ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-red-700 bg-red-50 border border-red-100 rounded-full px-2 py-0.5 font-bold">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                          Receta Médica
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5 font-bold">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          Venta Libre
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-5 text-right font-mono font-bold text-slate-800">
-                      S/ {prod.precio_sugerido.toFixed(2)}
-                    </td>
+          <div>
+            <div className="overflow-x-auto table-responsive-container">
+              <table className="w-full text-xs text-left text-slate-600 font-sans table-layout-fixed-custom">
+                <colgroup>
+                  <col className="w-[24%] min-w-[180px]" />
+                  <col className="w-[20%] min-w-[150px]" />
+                  <col className="w-[15%] min-w-[110px]" />
+                  <col className="w-[15%] min-w-[110px]" />
+                  <col className="w-[12%] min-w-[100px]" />
+                  <col className="w-[7%] min-w-[70px]" />
+                  <col className="w-[7%] min-w-[110px]" />
+                </colgroup>
+                <thead className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th className="py-3 px-5">Código / Nombre</th>
+                    <th className="py-3 px-5">Principio Activo</th>
+                    <th className="py-3 px-5">Laboratorio</th>
+                    <th className="py-3 px-5">Reg. Sanitario DIGEMID</th>
+                    <th className="py-3 px-5">Exigencia</th>
+                    <th className="py-3 px-5 text-right">Pto. Sugerido</th>
+                    <th className="py-3 px-5 text-right font-sans">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(prod => (
+                    <tr key={prod.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-3 px-5 overflow-hidden">
+                        <div className="flex flex-col max-w-full">
+                          <div className="flex items-center gap-1.5 overflow-hidden">
+                            <span className="font-bold text-slate-800 text-sm truncate" title={prod.nombre}>{prod.nombre}</span>
+                            {prod.activo === false && (
+                              <span className="inline-flex items-center gap-1 text-[8px] text-red-650 bg-red-50 border border-red-150 rounded px-1 py-0.5 font-bold animate-pulse whitespace-nowrap">
+                                🚫 INACTIVO
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex gap-2 text-[10px] text-slate-400 mt-1 max-w-full overflow-hidden">
+                            <span className="truncate">{prod.presentacion}</span>
+                            <span>•</span>
+                            <span className="font-mono truncate">{prod.codigo_barras}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-5 overflow-hidden">
+                        <div className="flex flex-col max-w-full">
+                          <span className="font-semibold text-slate-700 truncate block" title={prod.principio_activo}>
+                            {prod.principio_activo}
+                          </span>
+                          <span className="text-[10px] text-slate-400 truncate">{prod.concentracion}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-5 text-slate-500 font-medium overflow-hidden">
+                        <span className="truncate block" title={prod.laboratorio}>{prod.laboratorio}</span>
+                      </td>
+                      <td className="py-3 px-5 font-mono overflow-hidden">
+                        <span className="bg-slate-100 text-slate-705 text-[10px] px-2 py-0.5 rounded border border-slate-200 font-bold block truncate max-w-full" title={prod.registro_sanitario}>
+                          {prod.registro_sanitario}
+                        </span>
+                      </td>
+                      <td className="py-3 px-5 overflow-hidden">
+                        {prod.requiere_receta ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-red-700 bg-red-50 border border-red-150 rounded-full px-2 py-0.5 font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            Receta Médica
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-150 rounded-full px-2 py-0.5 font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Venta Libre
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-5 text-right font-mono font-bold text-slate-800">
+                        S/ {prod.precio_sugerido.toFixed(2)}
+                      </td>
+                      <td className="py-3 px-5 text-right whitespace-nowrap">
+                        <div className="flex justify-end gap-1.5 font-sans">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditProduct(prod)}
+                            className="p-1 px-2.5 bg-slate-50 hover:bg-slate-100 text-slate-705 hover:text-blue-650 rounded border border-slate-200 transition-all font-semibold text-[10.5px] cursor-pointer"
+                            title="Editar Medicamento"
+                          >
+                            ✏️ Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStartDeleteProduct(prod)}
+                            className="p-1 px-2.5 bg-red-50 hover:bg-red-100 text-red-655 hover:text-red-850 rounded border border-red-150 transition-all font-semibold text-[10.5px] cursor-pointer"
+                            title="Eliminar Medicamento"
+                          >
+                            🗑️ Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination controls footer */}
+            <div className="border-t border-slate-100 p-4">
+              <TransactionalPagination
+                currentPage={currentPage}
+                totalItems={filteredProducts.length}
+                pageSize={pageSize}
+                onPageChange={(p) => setCurrentPage(p)}
+                onPageSizeChange={(s) => setPageSize(s)}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -394,6 +551,222 @@ export default function ProductCatalog({ products, onAddProduct }: ProductCatalo
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR MEDICAMENTO */}
+      {showEditModal && editingProduct && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto border border-slate-150">
+            <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  ✏️ Editar Medicamento en Catálogo
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">El software aplicará reglas de validación sanitaria obligatoria.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowEditModal(false); setEditingProduct(null); }}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditProduct} className="p-6 space-y-4 text-xs font-sans">
+              {epError && (
+                <div className="bg-red-50 text-red-750 p-3 rounded-lg flex items-center gap-2 border border-red-150">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{epError}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Nombre Comercial *</label>
+                  <input
+                    type="text"
+                    required
+                    value={epName}
+                    onChange={(e) => setEpName(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Código de Barras (GTIN/EAN) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={epBarcode}
+                    onChange={(e) => setEpBarcode(e.target.value.replace(/\D/g, ''))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Principio Activo (DCI) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={epActive}
+                    onChange={(e) => setEpActive(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Concentración</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: 500 mg ó 100 mg / 5 mL"
+                    value={epConcentration}
+                    onChange={(e) => setEpConcentration(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Presentación de Venta</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: Caja de 100 tabletas, Frasco 120ml"
+                    value={epPresentation}
+                    onChange={(e) => setEpPresentation(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Laboratorio Productor *</label>
+                  <input
+                    type="text"
+                    required
+                    value={epLab}
+                    onChange={(e) => setEpLab(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Registro Sanitario DIGEMID *</label>
+                  <input
+                    type="text"
+                    required
+                    value={epSanReg}
+                    onChange={(e) => setEpSanReg(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Categoría Farmacológica *</label>
+                  <input
+                    type="text"
+                    required
+                    value={epCategory}
+                    onChange={(e) => setEpCategory(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Precio Unitario Sugerido (S/) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={epPrice}
+                    onChange={(e) => setEpPrice(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-6">
+                  <input
+                    type="checkbox"
+                    id="editRecipe"
+                    checked={epRecipe}
+                    onChange={(e) => setEpRecipe(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label htmlFor="editRecipe" className="text-[11px] font-bold text-slate-700 cursor-pointer">
+                    ¿Requiere Receta Médica Obligatoria?
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2 pt-6">
+                  <input
+                    type="checkbox"
+                    id="editActivo"
+                    checked={epActivo}
+                    onChange={(e) => setEpActivo(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <label htmlFor="editActivo" className="text-[11px] font-bold text-slate-700 cursor-pointer">
+                    ¿Producto Activo para Operaciones?
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditModal(false); setEditingProduct(null); }}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-600 transition-all font-sans"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm font-sans"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ELIMINAR MEDICAMENTO CONFIRMACIÓN */}
+      {showDeleteConfirm && deletingProduct && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-150">
+            <div className="p-5 text-center space-y-4">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-red-650 font-bold text-xl">
+                ⚠️
+              </div>
+              <div className="text-xs">
+                <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-tight">¿Eliminar del Catálogo?</h3>
+                <p className="text-slate-500 text-[11px] mt-1.5 leading-relaxed">
+                  Está por eliminar de forma permanente el medicamento <strong className="text-slate-800 font-bold">{deletingProduct.nombre}</strong> (Reg: <span className="font-mono">{deletingProduct.registro_sanitario}</span>) del Catálogo Maestro. Esto impedirá de inmediato su venta, sucursales y la provisión de nuevos lotes.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-105 flex justify-center gap-2 text-xs font-sans">
+                <button
+                  type="button"
+                  onClick={() => { setShowDeleteConfirm(false); setDeletingProduct(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteProduct}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                  id="confirm-delete-prod-btn"
+                >
+                  Confirmar Eliminación
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

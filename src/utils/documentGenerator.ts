@@ -64,45 +64,91 @@ export function generateA4Document(ctx: DocumentContext): jsPDF {
   const accentColor = { r: 79, g: 70, b: 229 };  // Indigo 600
   const lightBg = { r: 248, g: 250, b: 252 };     // Slate 50
 
-  // 1. Header & Logo area
-  doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
-  doc.rect(0, 0, 210, 15, 'F'); // Top colored band
+  let pageNumber = 1;
+  const contentHeightLimit = 262; // safe layout height limit before page breaks
 
-  // Company Logo & Info
-  doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b);
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(20);
-  doc.text('BOTICA ENTERPRISE S.A.C.', 15, 30);
-  doc.setFont('Helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 100);
-  
-  const branchName = branch?.nombre || 'Sede Principal - Lima';
-  const branchDir = branch?.direccion || 'Av. Javier Prado Este 1040, San Isidro';
-  const branchCity = branch?.ciudad || 'Lima';
-  const branchUbigeo = branch?.ubigeo || '150101';
-  
-  doc.text(`Establecimiento: ${branchName}`, 15, 36);
-  doc.text(`Dirección: ${branchDir} - ${branchCity}`, 15, 41);
-  doc.text(`Ubigeo: ${branchUbigeo} • Telf: (01) 458-1209`, 15, 46);
-  doc.text('Correo: farmacia.control@boticaenterprise.com.pe', 15, 51);
+  // Repeating header draw helper
+  const drawPageHeader = (pageNum: number) => {
+    // 1. Header background belt
+    doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
+    doc.rect(0, 0, 210, 15, 'F'); // Top colored band
 
-  // 2. SUNAT Invoice Number Frame Box (Top Right)
-  doc.setLineWidth(0.6);
-  doc.setDrawColor(accentColor.r, accentColor.g, accentColor.b);
-  doc.setFillColor(lightBg.r, lightBg.g, lightBg.b);
-  doc.rect(130, 22, 65, 32, 'FD'); // Box
-  
-  doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b);
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('R.U.C. 20485129304', 135, 29);
-  doc.setFontSize(11);
-  doc.setTextColor(accentColor.r, accentColor.g, accentColor.b);
-  doc.text(sale.tipo_comprobante === 'Factura' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA', 132, 38);
-  doc.setFontSize(13);
-  doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b);
-  doc.text(`${sale.serie_comprobante}-${sale.numero_comprobante}`, 148, 47);
+    if (pageNum === 1) {
+      // Company Logo & Info
+      doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.text('BOTICA ENTERPRISE S.A.C.', 15, 30);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      
+      const branchName = branch?.nombre || 'Sede Principal - Lima';
+      const branchDir = branch?.direccion || 'Av. Javier Prado Este 1040, San Isidro';
+      const branchCity = branch?.ciudad || 'Lima';
+      const branchUbigeo = branch?.ubigeo || '150101';
+      
+      doc.text(`Establecimiento: ${branchName}`, 15, 36);
+      doc.text(`Dirección: ${branchDir} - ${branchCity}`, 15, 41);
+      doc.text(`Ubigeo: ${branchUbigeo} • Telf: (01) 458-1209`, 15, 46);
+      doc.text('Correo: farmacia.control@boticaenterprise.com.pe', 15, 51);
+
+      // SUNAT Invoice Number Frame Box (Top Right)
+      doc.setLineWidth(0.6);
+      doc.setDrawColor(accentColor.r, accentColor.g, accentColor.b);
+      doc.setFillColor(lightBg.r, lightBg.g, lightBg.b);
+      doc.rect(130, 22, 65, 32, 'FD'); // Box
+      
+      doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text('R.U.C. 20485129304', 162.5, 29, { align: 'center' });
+      doc.setFontSize(11.5);
+      doc.setTextColor(accentColor.r, accentColor.g, accentColor.b);
+      
+      const typeLabelStr = sale.tipo_comprobante === 'Factura' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA';
+      doc.text(typeLabelStr, 162.5, 38, { align: 'center' });
+      doc.setFontSize(13.5);
+      doc.setTextColor(primaryColor.r, primaryColor.g, primaryColor.b);
+      doc.text(`${sale.serie_comprobante}-${sale.numero_comprobante}`, 162.5, 47, { align: 'center' });
+    } else {
+      // Clean secondary page header
+      doc.setTextColor(120, 120, 120);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text(`REPRESENTACIÓN IMPRESA OSE: ${sale.serie_comprobante}-${sale.numero_comprobante} • Pág. ${pageNum}`, 15, 22);
+      doc.setLineWidth(0.2);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, 24, 195, 24);
+    }
+  };
+
+  // Repeating table header draw helper
+  const drawPageTableHeader = (y: number) => {
+    doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
+    doc.rect(15, y, 180, 7, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('CANT.', 17, y + 5);
+    doc.text('FÓRMULA / MEDICAMENTO [LOTE]', 32, y + 5);
+    doc.text('P. UNIT', 130, y + 5);
+    doc.text('IGV total', 155, y + 5);
+    doc.text('TOTAL GENERAL', 174, y + 5);
+  };
+
+  // Repeating footer draw helper
+  const drawPageFooter = (pageNum: number) => {
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 120, 120);
+    doc.text(`Pág. ${pageNum}`, 195, 288, { align: 'right' });
+    doc.text('Autorizado por SUNAT mediante Resolución N° 097-2012. Consultas en farmacia.boticaenterprise.com.pe', 15, 288);
+  };
+
+  // --- START DRAW PAGE 1 ---
+  drawPageHeader(1);
 
   // 3. Client & Document Info Section
   doc.setFillColor(lightBg.r, lightBg.g, lightBg.b);
@@ -145,31 +191,45 @@ export function generateA4Document(ctx: DocumentContext): jsPDF {
   doc.setFont('Helvetica', 'normal');
   doc.text('Contado - Efectivo', 162, 82);
 
-  // 4. Products Table Headers
-  const tableStartY = 95;
-  doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
-  doc.rect(15, tableStartY, 180, 7, 'F');
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.text('CANT.', 17, tableStartY + 5);
-  doc.text('FÓRMULA / MEDICAMENTO [LOTE]', 32, tableStartY + 5);
-  doc.text('P. UNIT', 130, tableStartY + 5);
-  doc.text('IGV total', 155, tableStartY + 5);
-  doc.text('TOTAL GENERAL', 174, tableStartY + 5);
+  // Table Setup
+  let currentY = 95;
+  drawPageTableHeader(currentY);
+  currentY += 7;
 
-  let currentY = tableStartY + 7;
   doc.setFont('Helvetica', 'normal');
   doc.setTextColor(60, 60, 60);
   doc.setFontSize(8.5);
 
-  // Draw details (FIFO trace included in lot display)
+  // Draw details with intelligent page breaks
   details.forEach((item, idx) => {
+    const rowHeight = 8;
+    
+    // Check if the current row fits on the page
+    if (currentY + rowHeight > contentHeightLimit) {
+      // Draw footer for the soon-to-be-closed page
+      drawPageFooter(pageNumber);
+
+      // Add a fresh page
+      doc.addPage();
+      pageNumber++;
+
+      // Redraw headers for the brand new page
+      drawPageHeader(pageNumber);
+      
+      // Draw table header in its recurring style
+      currentY = 32;
+      drawPageTableHeader(currentY);
+      currentY += 7;
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(60, 60, 60);
+      doc.setFontSize(8.5);
+    }
+
     // Alternate light background row
     if (idx % 2 === 1) {
       doc.setFillColor(250, 252, 254);
-      doc.rect(15, currentY, 180, 8, 'F');
+      doc.rect(15, currentY, 180, rowHeight, 'F');
     }
     
     // Draw cells
@@ -178,7 +238,8 @@ export function generateA4Document(ctx: DocumentContext): jsPDF {
     
     // Concatenate drug name + principle active + lot
     const mainText = `${item.productoName} (${item.principioActivo}) [LOTE: ${item.numero_lote}]`;
-    const truncatedText = mainText.length > 55 ? mainText.slice(0, 55) + '...' : mainText;
+    // Smart cell wrapping / truncation to sustain responsive column alignment
+    const truncatedText = mainText.length > 55 ? mainText.slice(0, 52) + '...' : mainText;
     doc.text(truncatedText, 32, currentY + 5.5);
     
     doc.text(`S/ ${item.precio_unitario.toFixed(2)}`, 130, currentY + 5.5);
@@ -187,18 +248,34 @@ export function generateA4Document(ctx: DocumentContext): jsPDF {
 
     // bottom thin divider
     doc.setDrawColor(230, 230, 230);
-    doc.line(15, currentY + 8, 195, currentY + 8);
-    currentY += 8;
+    doc.line(15, currentY + rowHeight, 195, currentY + rowHeight);
+    currentY += rowHeight;
   });
+
+  // Check if Totals + Footer fits, else push to a clean last page
+  const totalsSectionHeight = 28;
+  const sunatSectionHeight = 35;
+  const totalRequiredHeight = totalsSectionHeight + sunatSectionHeight + 5;
+
+  if (currentY + totalRequiredHeight > contentHeightLimit) {
+    drawPageFooter(pageNumber);
+    doc.addPage();
+    pageNumber++;
+    drawPageHeader(pageNumber);
+    currentY = 30;
+  }
 
   // 5. Totals panel
   currentY += 4;
   doc.setFillColor(lightBg.r, lightBg.g, lightBg.b);
   doc.rect(125, currentY, 70, 24, 'F');
+  doc.setLineWidth(0.2);
+  doc.setDrawColor(180, 180, 180);
   doc.rect(125, currentY, 70, 24);
 
   doc.setTextColor(70, 70, 70);
   doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(8.5);
   doc.text('Subtotal Gravado S/ IGV:', 127, currentY + 5);
   doc.setFont('Helvetica', 'normal');
   doc.text(`S/ ${sale.subtotal.toFixed(2)}`, 180, currentY + 5);
@@ -220,7 +297,7 @@ export function generateA4Document(ctx: DocumentContext): jsPDF {
   doc.text(`S/ ${sale.total.toFixed(2)}`, 176, currentY + 20);
 
   // 6. SUNAT Footer / QR / Fingerprint Code
-  const footerY = currentY + 30;
+  const footerY = currentY + 28;
   
   // Left: QR and explanation
   drawMockQRCode(doc, 15, footerY, 28);
@@ -240,10 +317,13 @@ export function generateA4Document(ctx: DocumentContext): jsPDF {
   // Status stamp box
   doc.setFillColor(240, 253, 244); // Very light emerald green
   doc.setDrawColor(187, 247, 208);
-  doc.rect(48, footerY + 22, 110, 6, 'FD');
+  doc.rect(48, footerY + 22, 147, 6, 'FD');
   doc.setTextColor(21, 128, 61);
   doc.setFont('Helvetica', 'bold');
   doc.text('✔ TRANSMISIÓN CORRECTA SÍNCRONA APROBADA POR LA SUNAT', 51, footerY + 26.5);
+
+  // Draw final page footer
+  drawPageFooter(pageNumber);
 
   return doc;
 }
@@ -256,12 +336,12 @@ export function generateTicketDocument(ctx: DocumentContext): jsPDF {
   
   // Calculating dynamic ticket length based on drug purchase count
   const itemHeightFactor = details.length * 8;
-  const ticketHeight = 115 + itemHeightFactor; // mm
+  const ticketHeight = 125 + itemHeightFactor; // increased from 115 to 125 to compensate for header space
 
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
-    format: [80, Math.max(130, ticketHeight)] // 80mm width standard thermal roll
+    format: [80, Math.max(140, ticketHeight)] // increased min height
   });
 
   doc.setTextColor(0, 0, 0);
@@ -278,26 +358,36 @@ export function generateTicketDocument(ctx: DocumentContext): jsPDF {
   doc.text(bDir, 40, 20, { align: 'center' });
 
   // dashed divider
-  doc.text('--------------------------------------------', 40, 24, { align: 'center' });
+  doc.text('--------------------------------------------', 40, 23, { align: 'center' });
 
-  // Document details
-  doc.setFontSize(7);
-  doc.text(`TICKET COMPROBANTE: ${sale.serie_comprobante}-${sale.numero_comprobante}`, 5, 28);
-  doc.text(`FECHA EMISIÓN: ${sale.fecha_emision}`, 5, 32);
+  // Prominent Document Classification & Correlative block
+  doc.setFont('Courier', 'bold');
+  doc.setFontSize(9.5);
+  const typeLabel = sale.tipo_comprobante === 'Factura' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA';
+  doc.text(typeLabel, 40, 28, { align: 'center' });
+  doc.setFontSize(11);
+  doc.text(`N° ${sale.serie_comprobante}-${sale.numero_comprobante}`, 40, 33, { align: 'center' });
+
+  doc.setFont('Courier', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('--------------------------------------------', 40, 37, { align: 'center' });
+
+  // Document meta details below
+  doc.text(`FECHA EMISIÓN: ${sale.fecha_emision}`, 5, 41);
   
   const labelType = client?.tipo_documento || 'DNI';
   const numDoc = client?.numero_documento || 'S/D';
-  doc.text(`CLIENTE: ${client?.nombre_razon_social || 'CLIENTE AL POR MENOR'}`, 5, 36);
-  doc.text(`DOC. IDENTIDAD: ${labelType} ${numDoc}`, 5, 40);
+  doc.text(`CLIENTE: ${client?.nombre_razon_social || 'CLIENTE AL POR MENOR'}`, 5, 45);
+  doc.text(`DOC. IDENTIDAD: ${labelType} ${numDoc}`, 5, 49);
 
-  doc.text('--------------------------------------------', 40, 44, { align: 'center' });
+  doc.text('--------------------------------------------', 40, 53, { align: 'center' });
 
   // Table items title
   doc.setFont('Courier', 'bold');
-  doc.text('CANT  PRODUCTO [LOTE]         P.UNIT   TOTAL', 5, 48);
+  doc.text('CANT  PRODUCTO [LOTE]         P.UNIT   TOTAL', 5, 57);
   doc.setFont('Courier', 'normal');
 
-  let currentY = 52;
+  let currentY = 61;
   details.forEach((item) => {
     // Line 1: quantity and product name
     const drugLine = `${item.cantidad} x ${item.productoName.slice(0, 20)}`;
@@ -400,9 +490,16 @@ export function triggerDirectTicketPrint(ctx: DocumentContext) {
         
         <div class="divider"></div>
         
-        <div><strong>COMPROBANTE:</strong> ${sale.tipo_comprobante} de Venta Electrónica</div>
-        <div><strong>TICKET:</strong> ${sale.serie_comprobante}-${sale.numero_comprobante}</div>
-        <div><strong>FECHA:</strong> ${sale.fecha_emision}</div>
+        <div class="text-center font-bold" style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px;">
+          ${sale.tipo_comprobante === 'Factura' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA'}
+        </div>
+        <div class="text-center font-bold" style="font-size: 13px; margin: 3px 0 5px 0;">
+          N° ${sale.serie_comprobante}-${sale.numero_comprobante}
+        </div>
+        
+        <div class="divider"></div>
+        
+        <div><strong>FECHA EMISIÓN:</strong> ${sale.fecha_emision}</div>
         <div><strong>CLIENTE:</strong> ${cName}</div>
         <div><strong>DOC. IDENTIDAD:</strong> ${cDoc}</div>
         

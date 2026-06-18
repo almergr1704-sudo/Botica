@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShoppingBag, AlertTriangle, Boxes, CheckCircle2, FileText, Ban, Building2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShoppingBag, AlertTriangle, Boxes, CheckCircle2, FileText, Ban, Building2, Lock, Edit3, ShieldCheck, ClipboardCheck } from 'lucide-react';
 import { Lote, Producto, Sucursal, Venta } from '../types/pharmacy';
 
 interface DashboardOverviewProps {
@@ -19,6 +19,7 @@ export default function DashboardOverview({
   onNavigate,
   onClearExpired
 }: DashboardOverviewProps) {
+  const [activePolicyTab, setActivePolicyTab] = useState<'all' | 'editable' | 'critical'>('all');
   // Stat calculators
   const totalStock = lots.reduce((acc, curr) => acc + curr.stock, 0);
   const totalInventoryValue = lots.reduce((acc, curr) => acc + (curr.stock * curr.precio_venta), 0);
@@ -132,6 +133,191 @@ export default function DashboardOverview({
           <p className="text-[11px] text-purple-600 mt-2 font-medium">
             {products.length} productos autorizados DIGEMID
           </p>
+        </div>
+      </div>
+
+      {/* SECCIÓN NUEVA: POLÍTICA DE GESTIÓN Y SEGURIDAD DE DATOS (REQUISITO EXPLICITO) */}
+      <div id="data-policy-control-panel" className="bg-white dark:bg-slate-900 rounded-xl border border-slate-150 dark:border-slate-800 p-5 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h4 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5 uppercase tracking-wide">
+              <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              Directiva de Seguridad: Clasificación de Datos & Integridad Transaccional
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Control de edición reglamentaria conforme a normas SUNAT (R.S. N° 097-2012) y buenas prácticas de trazabilidad farmacéutica DIGEMID.
+            </p>
+          </div>
+          
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[10.5px]">
+            <button
+              onClick={() => setActivePolicyTab('all')}
+              className={`px-3 py-1 font-bold rounded-md transition-all ${
+                activePolicyTab === 'all' 
+                  ? 'bg-white dark:bg-slate-750 text-slate-900 dark:text-white shadow-xs' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+              }`}
+            >
+              Todos ({11 + 9})
+            </button>
+            <button
+              onClick={() => setActivePolicyTab('editable')}
+              className={`px-3 py-1 font-bold rounded-md transition-all flex items-center gap-1 ${
+                activePolicyTab === 'editable' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-blue-600'
+              }`}
+            >
+              <Edit3 className="w-3.5 h-3.5 mr-0.5" />
+              Editables ({11})
+            </button>
+            <button
+              onClick={() => setActivePolicyTab('critical')}
+              className={`px-3 py-1 font-bold rounded-md transition-all flex items-center gap-1 ${
+                activePolicyTab === 'critical' 
+                  ? 'bg-rose-600 text-white shadow-xs' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-rose-600'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5 mr-0.5" />
+              Inmutables ({9})
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic Display Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          {/* COL 1: Datos Editables y Eliminables */}
+          {(activePolicyTab === 'all' || activePolicyTab === 'editable') && (
+            <div className="bg-slate-50/70 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-850 p-4 rounded-xl space-y-3">
+              <div className="flex justify-between items-center text-xs font-extrabold text-blue-700 dark:text-blue-400 uppercase tracking-tight">
+                <span className="flex items-center gap-1">
+                  <Edit3 className="w-4 h-4 text-blue-500" />
+                  Datos Maestros Editables
+                </span>
+                <span className="text-[10px] font-mono bg-blue-50 dark:bg-blue-950/40 text-blue-805 dark:text-blue-300 px-2 py-0.5 rounded border border-blue-100 dark:border-blue-900">
+                  Bitácora de Auditoría Activa
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-550 dark:text-slate-400 leading-relaxed font-sans">
+                Registros maestros que admiten modificaciones directas administradas bajo control estricto de roles. Cada cambio registra usuario, timestamp, IP y valores previos para garantizar trazabilidad.
+              </p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Staff / Usuarios</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Sucursales filiales</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Clientes de POS</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Proveedores droguerías</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Medicamentos / Catálogo</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/85 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Categorías y marcas</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Configuración general</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Métodos de pago POS</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Roles y permisos</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Contacto / Direcciones</span>
+                </div>
+                <div className="col-span-1 sm:col-span-2 flex items-center gap-1.5 p-2 bg-blue-50/20 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900 border-dashed rounded-lg text-[10px]">
+                  <span className="w-2 h-2 bg-blue-600 rounded-full shrink-0"></span>
+                  <span className="font-bold text-blue-900 dark:text-blue-300">Lotes creados por error sin movimientos asociados</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* COL 2: Datos Críticos INMUTABLES */}
+          {(activePolicyTab === 'all' || activePolicyTab === 'critical') && (
+            <div className="bg-slate-50/70 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-850 p-4 rounded-xl space-y-3">
+              <div className="flex justify-between items-center text-xs font-extrabold text-rose-700 dark:text-rose-400 uppercase tracking-tight">
+                <span className="flex items-center gap-1">
+                  <Lock className="w-4 h-4 text-rose-500" />
+                  Registros Críticos Inmutables
+                </span>
+                <span className="text-[10px] font-mono bg-rose-50 dark:bg-rose-950/45 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded border border-rose-100 dark:border-rose-900">
+                  Bloqueo Físico Activo
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-550 dark:text-slate-400 leading-relaxed font-sans">
+                La legislación farmacéutica y tributaria prohibe la alteración o borrado de transacciones. Para correcciones, debe utilizarse anulación lógica o documentos contables complementarios:
+              </p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Boletas emitidas</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Facturas registradas</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Notas Crédito / Débito</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Historial de Ventas</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Kardex contable</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Movimientos de caja</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-850 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Libros contables</span>
+                </div>
+                <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-lg">
+                  <Lock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Logs de Auditoría</span>
+                </div>
+                <div className="col-span-1 sm:col-span-2 flex items-center gap-1.5 p-2 bg-rose-50/20 dark:bg-rose-950/20 border border-rose-100/50 dark:border-rose-900 border-dashed rounded-lg text-[10px]">
+                  <Lock className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span className="font-bold text-rose-900 dark:text-rose-300">Inventario y saldos financieros consolidados</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Auditor log confirmation footer inside widget */}
+        <div className="bg-slate-50 dark:bg-slate-850 p-3 rounded-lg border border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px]">
+          <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+            <ClipboardCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span>Bitácora activa: Todos los cambios a datos maestros se graban de forma inmediata e indeleble.</span>
+          </span>
         </div>
       </div>
 

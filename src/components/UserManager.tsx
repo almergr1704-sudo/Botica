@@ -12,6 +12,8 @@ interface UserManagerProps {
   onToggleUserStatus: (userId: string) => void;
   currentUser: Usuario;
   onSetCurrentUser: (user: Usuario) => void;
+  onUpdateUser?: (user: Usuario) => void;
+  onDeleteUser?: (userId: string) => void;
 }
 
 export default function UserManager({
@@ -20,7 +22,9 @@ export default function UserManager({
   onAddUser,
   onToggleUserStatus,
   currentUser,
-  onSetCurrentUser
+  onSetCurrentUser,
+  onUpdateUser,
+  onDeleteUser
 }: UserManagerProps) {
   // Navigation inside this modular view
   const [activeSubTab, setActiveSubTab] = useState<'users_list' | 'architecture_view' | 'login_simulator'>('users_list');
@@ -29,11 +33,45 @@ export default function UserManager({
   const [fullName, setFullName] = useState('');
   const [dni, setDni] = useState('');
   const [username, setUsername] = useState('');
+  const [usernameEdited, setUsernameEdited] = useState(false);
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'Administrador' | 'FarmaceuticoRegente' | 'Cajero'>('Cajero');
+  const [role, setRole] = useState<'Administrador' | 'FarmaceuticoRegente' | 'Almacenero' | 'Cajero'>('Cajero');
   const [branchId, setBranchId] = useState('');
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState(false);
+
+  // Suggest username when fullName changes
+  useEffect(() => {
+    if (!usernameEdited && fullName.trim()) {
+      const normalized = fullName.trim().toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // remove accents
+        .replace(/[^a-z\s]/g, ''); // letters and spaces only
+      const parts = normalized.split(/\s+/);
+      if (parts.length >= 2) {
+        // Concatenate first name + paternal surname (e.g. Almer Gaona -> almergaona)
+        const suggested = parts[0] + parts[1];
+        setUsername(suggested);
+      } else if (parts.length === 1 && parts[0]) {
+        setUsername(parts[0]);
+      }
+    } else if (!fullName.trim() && !usernameEdited) {
+      setUsername('');
+    }
+  }, [fullName, usernameEdited]);
+
+  // Edit / Update States
+  const [editingUser, setEditingUser] = useState<Usuario | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFullName, setEditFullName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editRole, setEditRole] = useState<'Administrador' | 'FarmaceuticoRegente' | 'Almacenero' | 'Cajero'>('Cajero');
+  const [editBranchId, setEditBranchId] = useState('');
+  const [editError, setEditError] = useState('');
+
+  // Delete Confirm States
+  const [deletingUser, setDeletingUser] = useState<Usuario | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Form states for login simulator
   const [simUsername, setSimUsername] = useState('');
@@ -80,18 +118,78 @@ export default function UserManager({
       nombre: `${fullName} (DNI ${dni})`,
       rol: role,
       id_sucursal: branchId,
-      activo: true // default state is Active as per standard creation
+      activo: true, // default state is Active as per standard creation
+      password: password || 'ClaveGenerica123!',
+      requiere_cambio_password: true
     });
 
     setFormSuccess(true);
     setFullName('');
     setDni('');
     setUsername('');
+    setUsernameEdited(false);
     setPassword('');
     
     setTimeout(() => {
       setFormSuccess(false);
     }, 4000);
+  };
+
+  // Edit / Update actions
+  const handleStartEditUser = (user: Usuario) => {
+    setEditingUser(user);
+    setEditFullName(user.nombre);
+    setEditUsername(user.username);
+    setEditRole(user.rol);
+    setEditBranchId(user.id_sucursal);
+    setEditError('');
+    setShowEditModal(true);
+  };
+
+  const handleSaveEditUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditError('');
+
+    if (!editFullName || !editUsername || !editBranchId) {
+      setEditError('Por favor complete todos lo campos obligatorios.');
+      return;
+    }
+
+    // Check duplicate username
+    if (editingUser && editUsername.toLowerCase().trim() !== editingUser.username.toLowerCase().trim()) {
+      const duplicate = users.find(u => u.username.toLowerCase() === editUsername.toLowerCase().trim());
+      if (duplicate) {
+        setEditError(`El username "${editUsername}" ya está registrado.`);
+        return;
+      }
+    }
+
+    if (editingUser && onUpdateUser) {
+      onUpdateUser({
+        ...editingUser,
+        nombre: editFullName.trim(),
+        username: editUsername.toLowerCase().trim(),
+        rol: editRole,
+        id_sucursal: editBranchId
+      });
+    }
+
+    setShowEditModal(false);
+    setEditingUser(null);
+  };
+
+  // Delete actions
+  const handleStartDeleteUser = (user: Usuario) => {
+    setDeletingUser(user);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDeleteUser = () => {
+    if (deletingUser && onDeleteUser) {
+      onDeleteUser(deletingUser.id);
+    }
+    setShowDeleteConfirm(false);
+    setDeletingUser(null);
   };
 
   // Action: Login simulator verification with strict toggled control
@@ -151,11 +249,13 @@ export default function UserManager({
         </div>
 
         {/* Sub-panels control */}
-        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setActiveSubTab('users_list')}
-            className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center gap-1.5 ${
-              activeSubTab === 'users_list' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+            className={`px-3 py-1.5 text-[11px] font-extrabold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'users_list' 
+                ? 'bg-indigo-600 dark:bg-indigo-600 text-white shadow-sm' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Users className="w-4 h-4 text-xs" />
@@ -164,18 +264,22 @@ export default function UserManager({
           
           <button
             onClick={() => setActiveSubTab('login_simulator')}
-            className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center gap-1.5 ${
-              activeSubTab === 'login_simulator' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+            className={`px-3 py-1.5 text-[11px] font-extrabold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'login_simulator' 
+                ? 'bg-indigo-600 dark:bg-indigo-600 text-white shadow-sm' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Key className="w-4 h-4 text-xs text-amber-500" />
+            <Key className="w-4 h-4 text-xs" />
             Simulador de Login
           </button>
 
           <button
             onClick={() => setActiveSubTab('architecture_view')}
-            className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center gap-1.5 ${
-              activeSubTab === 'architecture_view' ? 'bg-white text-slate-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+            className={`px-3 py-1.5 text-[11px] font-extrabold rounded-md transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === 'architecture_view' 
+                ? 'bg-indigo-600 dark:bg-indigo-600 text-white shadow-sm' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <FolderGit className="w-4 h-4 text-xs" />
@@ -273,7 +377,10 @@ export default function UserManager({
                     type="text"
                     required
                     value={username}
-                    onChange={(e) => setUsername(e.target.value.replace(/\s+/g, ''))}
+                    onChange={(e) => {
+                      setUsername(e.target.value.replace(/\s+/g, ''));
+                      setUsernameEdited(true);
+                    }}
                     placeholder="ej: daniel.cajero"
                     className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono bg-slate-50"
                   />
@@ -331,6 +438,24 @@ export default function UserManager({
                       <div>
                         <span className="block font-bold text-[10.5px]">Químico Farmacéutico</span>
                         <span className="block text-[9px] opacity-75 font-normal">Gestiona lotes, mermas y medicamentos regulados</span>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className={`p-2.5 rounded-lg border cursor-pointer flex items-center justify-between transition-all ${
+                    role === 'Almacenero' ? 'bg-indigo-50 border-indigo-250 text-indigo-900' : 'bg-slate-50 border-slate-205 hover:bg-slate-100 text-slate-705'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                       <input 
+                        type="radio" 
+                        name="role" 
+                        checked={role === 'Almacenero'} 
+                        onChange={() => setRole('Almacenero')}
+                        className="text-indigo-600 focus:ring-indigo-505"
+                      />
+                      <div>
+                        <span className="block font-bold text-[10.5px]">Almacenero / Logística</span>
+                        <span className="block text-[9px] opacity-75 font-normal">Acceso restringido únicamente a inventario, compras y proveedores</span>
                       </div>
                     </div>
                   </label>
@@ -417,9 +542,17 @@ export default function UserManager({
                               ? 'bg-purple-100 text-purple-700 border border-purple-200' 
                               : u.rol === 'FarmaceuticoRegente'
                               ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                              : u.rol === 'Almacenero'
+                              ? 'bg-teal-100 text-teal-700 border border-teal-200'
                               : 'bg-slate-100 text-slate-700 border border-slate-205'
                           }`}>
-                            {u.rol === 'Administrador' ? 'Administrador' : u.rol === 'FarmaceuticoRegente' ? 'Q. Farmacéutico' : 'Cajero'}
+                            {u.rol === 'Administrador' 
+                              ? 'Administrador' 
+                              : u.rol === 'FarmaceuticoRegente' 
+                              ? 'Q. Farmacéutico' 
+                              : u.rol === 'Almacenero' 
+                              ? 'Almacenero' 
+                              : 'Cajero'}
                           </span>
                         </td>
                         <td className="px-4 py-3.5 text-slate-700">
@@ -444,6 +577,32 @@ export default function UserManager({
                               <span className="text-[9px] font-mono text-indigo-505 font-bold italic mr-1">Eres tú</span>
                             )}
                             
+                            {/* Edit Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditUser(u)}
+                              className="p-1 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-indigo-650 rounded border border-slate-200 transition-all text-[11px]"
+                              title="Editar Empleado"
+                            >
+                              ✏️
+                            </button>
+
+                            {/* Delete Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isCurrentUser) {
+                                  alert('Por seguridad, no puedes eliminar tu propia cuenta activa de administrador.');
+                                  return;
+                                }
+                                handleStartDeleteUser(u);
+                              }}
+                              className="p-1 px-2 bg-red-50 hover:bg-red-105 text-red-650 hover:text-red-850 rounded border border-red-150 transition-all text-[11px]"
+                              title="Eliminar Empleado"
+                            >
+                              🗑️
+                            </button>
+
                             {/* Toggle Switch */}
                             <button
                               type="button"
@@ -479,6 +638,142 @@ export default function UserManager({
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* MODALS PARA ACCIONES MASTER */}
+      {showEditModal && editingUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden border border-slate-150">
+            <div className="px-5 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  ✏️ Editar Acceso de Personal
+                </h3>
+                <p className="text-[10px] text-slate-450 mt-0.5">Modifique los privilegios, sede y nombre del empleado.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowEditModal(false); setEditingUser(null); }}
+                className="text-slate-450 hover:text-slate-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditUser} className="p-5 space-y-4 text-xs font-sans">
+              {editError && (
+                <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150 flex items-center gap-2">
+                  <AlertOctagon className="w-4 h-4 shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Completo y DNI</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-slate-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre de Usuario (Username)</label>
+                  <input
+                    type="text"
+                    required
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value.replace(/\s+/g, ''))}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-mono bg-slate-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rol / Cargo del Personal</label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value as any)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-white"
+                  >
+                    <option value="Administrador">Administrador</option>
+                    <option value="FarmaceuticoRegente">Químico Farmacéutico</option>
+                    <option value="Almacenero">Almacenero</option>
+                    <option value="Cajero">Cajero</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sede / Establecimiento de Operación</label>
+                  <select
+                    value={editBranchId}
+                    onChange={(e) => setEditBranchId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-white"
+                  >
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.nombre} ({b.ciudad})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditModal(false); setEditingUser(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && deletingUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-150">
+            <div className="p-5 text-center space-y-4 font-sans text-xs">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-red-650">
+                <AlertOctagon className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-tight">¿Dar de baja definitiva?</h3>
+                <p className="text-slate-500 text-[11px] mt-1.5 leading-relaxed">
+                  Está a punto de revocar todos los accesos e historiales del empleado <strong className="text-slate-855 font-bold">{deletingUser.nombre}</strong> (username: <span className="font-mono text-indigo-600 font-bold">{deletingUser.username}</span>). Esta acción es irreversible en la BD interna para fines de auditoría retroactiva.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowDeleteConfirm(false); setDeletingUser(null); }}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteUser}
+                  className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  Confirmar Baja
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

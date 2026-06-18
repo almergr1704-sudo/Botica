@@ -3,7 +3,8 @@ import {
   Search, ShoppingCart, Trash2, ShieldCheck, TicketCheck, Users, HelpCircle, 
   FileText, CheckCircle, RefreshCw, Send, AlertTriangle, Lock, Unlock, 
   DollarSign, ArrowUpRight, ArrowDownLeft, UploadCloud, FileImage, 
-  History, Eye, ClipboardCheck, Scale, AlertOctagon, Ban, Printer, Download, Share2, Mail, ExternalLink, X
+  History, Eye, ClipboardCheck, Scale, AlertOctagon, Ban, Printer, Download, Share2, Mail, ExternalLink, X,
+  CreditCard, QrCode, Coins, Check, Percent
 } from 'lucide-react';
 import { Sucursal, Producto, Lote, Cliente, Usuario, Venta, DetalleVenta } from '../types/pharmacy';
 import { 
@@ -33,6 +34,9 @@ interface CashSession {
   fecha_cierre?: string;
   monto_cierre_fisico?: number;
   diferencia_arqueo?: number;
+  ventas_efectivo?: number;
+  ventas_yape_plin?: number;
+  ventas_tarjeta?: number;
 }
 
 interface POSSystemProps {
@@ -43,6 +47,7 @@ interface POSSystemProps {
   users: Usuario[];
   onAddSale: (newSale: Venta, details: Omit<DetalleVenta, 'id' | 'id_venta'>[]) => void;
   onDeductStock: (loteId: string, qty: number) => void;
+  onAddClient?: (client: Omit<Cliente, 'id'>) => void;
 }
 
 interface CartItem {
@@ -59,12 +64,23 @@ export default function POSSystem({
   clients,
   users,
   onAddSale,
-  onDeductStock
+  onDeductStock,
+  onAddClient
 }: POSSystemProps) {
   // Config states & current branch
   const [selectedBranchId, setSelectedBranchId] = useState<string>('suc-01');
   const [selectedClientId, setSelectedClientId] = useState<string>('cli-default');
   const [docType, setDocType] = useState<'Boleta' | 'Factura'>('Boleta');
+
+  // New Client creation form states
+  const [clientSearchType, setClientSearchType] = useState<'existing' | 'new'>('existing');
+  const [newClientDocType, setNewClientDocType] = useState<'DNI' | 'RUC'>('DNI');
+  const [newClientDocNum, setNewClientDocNum] = useState('');
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientAddress, setNewClientAddress] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
+  const [isQueryingRUC, setIsQueryingRUC] = useState(false);
+  const [consultMsg, setConsultMsg] = useState('');
   
   // Search state
   const [searchProductQuery, setSearchProductQuery] = useState('');
@@ -93,6 +109,99 @@ export default function POSSystem({
   const [shareChannel, setShareChannel] = useState<'whatsapp' | 'email'>('whatsapp');
   const [shareInput, setShareInput] = useState<string>('');
   const [shareToast, setShareToast] = useState<string>('');
+
+  const MOCK_SUNAT_RUC_DB: Record<string, { name: string, address: string, email: string }> = {
+    '20100032901': { name: 'FARMACO PERU S.A.C.', address: 'Av. Las Gardenias 452 - San Isidro, Lima', email: 'contacto@farmacoperu.com' },
+    '20543210987': { name: 'CORP. MEDICA SAN FERNANDO E.I.R.L.', address: 'Jr. Angaraes 780 - Cercado de Lima, Lima', email: 'ventas@sanfernandomedica.pe' },
+    '20601234567': { name: 'REPRESENTACIONES DEZA S.A.', address: 'Av. Javier Prado Este 1105 - San Borja, Lima', email: 'administracion@deza.com.pe' },
+    '20591823719': { name: 'BOTICAS EL INCA DEL SUR S.C.R.L.', address: 'Arequipa, Calle Comercio 124', email: 'boticaselinca@incapack.com' }
+  };
+
+  const MOCK_RENIEC_DNI_DB: Record<string, { name: string, address: string, email: string }> = {
+    '45718293': { name: 'Carlos Mendoza Ruiz', address: 'Calle Los Cedros 321, Lince, Lima', email: 'carlos.mendoza@gmail.com' },
+    '71294821': { name: 'Fiorella Beltrán Alva', address: 'Jr. Cuzco 950, San Isidro, Lima', email: 'fio.beltran@hotmail.com' },
+    '44556677': { name: 'Juan Alberto Perez Lopez', address: 'Av. Larco 450, Miraflores, Lima', email: 'juan.perez@outlook.com' },
+  };
+
+  const handleConsultDoc = () => {
+    const docNum = newClientDocNum.trim();
+    if (newClientDocType === 'RUC') {
+      if (docNum.length !== 11) {
+        setConsultMsg('❌ El RUC debe contener exactamente 11 números.');
+        return;
+      }
+      setIsQueryingRUC(true);
+      setConsultMsg('🔍 Consultando padrón SUNAT...');
+      setTimeout(() => {
+        const found = MOCK_SUNAT_RUC_DB[docNum];
+        if (found) {
+          setNewClientName(found.name);
+          setNewClientAddress(found.address);
+          setNewClientEmail(found.email);
+          setConsultMsg('✅ SUNAT: Datos obtenidos con éxito.');
+        } else {
+          const suffix = ['S.A.C.', 'E.I.R.L.', 'S.R.L.', 'S.A.'][Math.floor(Math.random() * 4)];
+          const names = ['FARMANOR PERU', 'DISTRIBUIDORA INKAFARMA', 'BIO-ALFA PERU', 'MEDICINAS DEL PACIFICO', 'BOTICA & SALUD INTEGRAL', 'FARMACÉUTICA NACIONAL'];
+          const randomName = `${names[Math.floor(Math.random() * names.length)]} ${suffix}`;
+          const randomAddress = `Av. Los Próceres N° ${Math.floor(100 + Math.random() * 900)}, San Juan de Lurigancho, Lima`;
+          const randomEmail = `contacto@${randomName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com.pe`;
+          setNewClientName(randomName);
+          setNewClientAddress(randomAddress);
+          setNewClientEmail(randomEmail);
+          setConsultMsg('✅ SUNAT: Cliente nuevo registrado en padrón. Datos autocompletados.');
+        }
+        setIsQueryingRUC(false);
+      }, 800);
+    } else {
+      if (docNum.length !== 8) {
+        setConsultMsg('❌ El DNI debe contener exactamente 8 números.');
+        return;
+      }
+      setIsQueryingRUC(true);
+      setConsultMsg('🔍 Consultando RENIEC...');
+      setTimeout(() => {
+        const found = MOCK_RENIEC_DNI_DB[docNum];
+        if (found) {
+          setNewClientName(found.name);
+          setNewClientAddress(found.address);
+          setNewClientEmail(found.email);
+          setConsultMsg('✅ RENIEC: Identidad verificada.');
+        } else {
+          const names = ['Alejandro', 'Luis', 'María', 'Ana', 'Juan', 'Rosa', 'Gisela', 'Roberto', 'Paola'];
+          const surnames1 = ['Quispe', 'Flores', 'Sánchez', 'García', 'Alva', 'Rojas', 'Mendoza', 'Díaz', 'Castillo'];
+          const surnames2 = ['Huamán', 'Mamani', 'Gutiérrez', 'Torres', 'Soto', 'Ramírez', 'Vargas', 'Espinoza'];
+          const randomName = `${names[Math.floor(Math.random() * names.length)]} ${surnames1[Math.floor(Math.random() * surnames1.length)]} ${surnames2[Math.floor(Math.random() * surnames2.length)]}`;
+          const randomAddress = `Jr. Ayacucho N° ${Math.floor(100 + Math.random() * 900)}, Cercado de Lima, Lima`;
+          const randomEmail = `${randomName.toLowerCase().split(' ')[0]}.${randomName.toLowerCase().split(' ')[1]}@gmail.com`;
+          setNewClientName(randomName);
+          setNewClientAddress(randomAddress);
+          setNewClientEmail(randomEmail);
+          setConsultMsg('✅ RENIEC: Persona encontrada. Datos completados.');
+        }
+        setIsQueryingRUC(false);
+      }, 600);
+    }
+  };
+
+  const changeDocType = (type: 'Boleta' | 'Factura') => {
+    setDocType(type);
+    setConsultMsg('');
+    if (type === 'Factura') {
+      setNewClientDocType('RUC');
+      // If client is currently selected to default (anonymous), we should force to search corporate or enter dynamic fields
+      const currentClient = clients.find(c => c.id === selectedClientId);
+      if (!currentClient || currentClient.tipo_documento !== 'RUC') {
+        const firstRuc = clients.find(c => c.tipo_documento === 'RUC');
+        if (firstRuc) {
+          setSelectedClientId(firstRuc.id);
+        } else {
+          setClientSearchType('new');
+        }
+      }
+    } else {
+      setNewClientDocType('DNI');
+    }
+  };
 
   // Active cashier (Simulado)
   const activeUser: Usuario = users[2] || { 
@@ -216,6 +325,9 @@ export default function POSSystem({
       monto_apertura: openingBalanceInput,
       fecha_apertura: formattedDate,
       ventas_acumuladas: 0,
+      ventas_efectivo: 0,
+      ventas_yape_plin: 0,
+      ventas_tarjeta: 0,
       egresos_manuales: [],
       estado: 'ABIERTA'
     };
@@ -401,9 +513,9 @@ export default function POSSystem({
     return clientIsSocio ? item.lote.precio_venta * 0.85 : item.lote.precio_venta;
   };
 
-  const cartSubtotal = cart.reduce((acc, curr) => acc + (curr.cantidad * getCartItemUnitPrice(curr)), 0);
-  const cartIgv = cartSubtotal * 0.18;
-  const cartTotal = cartSubtotal + cartIgv;
+  const cartTotal = cart.reduce((acc, curr) => acc + (curr.cantidad * getCartItemUnitPrice(curr)), 0);
+  const cartSubtotal = cartTotal / 1.18;
+  const cartIgv = cartTotal - cartSubtotal;
 
   // Controller to open checkout payment wizard after standard validations
   const handleOpenCheckoutModal = () => {
@@ -420,8 +532,6 @@ export default function POSSystem({
       return;
     }
 
-    const clientObj = clients.find(c => c.id === selectedClientId);
-
     // 1. Medical prescription validation
     if (requiresRecipe) {
       if (!recipeDoctorName.trim() || !recipeCMP.trim() || !recipeDate || !recipeFileAttached || !recipeCheckedByRegente) {
@@ -434,22 +544,81 @@ export default function POSSystem({
       }
     }
 
-    // 2. SUNAT RUC validation for Invoice
+    // 2. SUNAT Customer validation depending on docType
     if (docType === 'Factura') {
-      if (!clientObj || clientObj.id === 'cli-default') {
-        setErrorPOSMessage('Para emitir Factura Electrónica SUNAT, debe seleccionar un cliente corporativo.');
-        return;
-      }
-      if (clientObj.tipo_documento !== 'RUC') {
-        setErrorPOSMessage('El cliente seleccionado tiene DNI o es anónimo. Se exige RUC para emitir Factura (IGV Crédito Fiscal).');
-        return;
-      }
-    }
+      if (clientSearchType === 'existing') {
+        const clientObj = clients.find(c => c.id === selectedClientId);
+        if (!clientObj || clientObj.id === 'cli-default') {
+          setErrorPOSMessage('Para emitir Factura Electrónica SUNAT, debe seleccionar un cliente corporativo.');
+          return;
+        }
+        if (clientObj.tipo_documento !== 'RUC') {
+          setErrorPOSMessage('El cliente seleccionado tiene DNI o es anónimo. Se requiere RUC de 11 dígitos para emitir Factura.');
+          return;
+        }
+      } else {
+        // New client validation for Factura
+        const docNum = newClientDocNum.trim();
+        if (docNum.length !== 11 || isNaN(Number(docNum))) {
+          setErrorPOSMessage('Para emitir Factura, el RUC del cliente debe tener exactamente 11 dígitos numéricos.');
+          return;
+        }
+        if (!newClientName.trim()) {
+          setErrorPOSMessage('La Razón Social del cliente es obligatoria para emitir Factura.');
+          return;
+        }
+        if (!newClientAddress.trim()) {
+          setErrorPOSMessage('La Dirección Fiscal del cliente es obligatoria para emitir Factura.');
+          return;
+        }
+        if (!newClientEmail.trim() || !newClientEmail.includes('@')) {
+          setErrorPOSMessage('Debe ingresar un Correo Electrónico válido para el envío de los comprobantes electrónicos de la Factura.');
+          return;
+        }
 
-    // 3. SUNAT Cash threshold limit (customer identity is required on tickets >= S/. 700.00)
-    if (cartTotal >= 700 && (!clientObj || clientObj.id === 'cli-default')) {
-      setErrorPOSMessage('Normativa SUNAT: Compras superiores o iguales a S/ 700.00 de boleta requieren identificar plenamente al cliente (DNI o RUC obligatorios). El cliente anónimo no está permitido.');
-      return;
+        // Check and register client dynamically
+        const existing = clients.find(c => c.numero_documento === docNum);
+        if (!existing) {
+          onAddClient?.({
+            nombre_razon_social: newClientName.trim(),
+            tipo_documento: 'RUC',
+            numero_documento: docNum,
+            direccion: newClientAddress.trim(),
+            email: newClientEmail.trim(),
+            es_socio: false
+          });
+        }
+      }
+    } else {
+      // Boleta check: Optional client registering
+      if (clientSearchType === 'new' && newClientDocNum.trim()) {
+        const docNum = newClientDocNum.trim();
+        if (newClientDocType === 'DNI' && docNum.length !== 8) {
+          setErrorPOSMessage('El DNI ingresado del cliente debe tener exactamente 8 dígitos.');
+          return;
+        }
+        if (newClientDocType === 'RUC' && docNum.length !== 11) {
+          setErrorPOSMessage('El RUC ingresado del cliente debe tener exactamente 11 dígitos.');
+          return;
+        }
+        if (!newClientName.trim()) {
+          setErrorPOSMessage('Por lo menos debe ingresar el Nombre/Razón Social para registrar los datos del cliente.');
+          return;
+        }
+
+        // Save if not exists
+        const existing = clients.find(c => c.numero_documento === docNum);
+        if (!existing) {
+          onAddClient?.({
+            nombre_razon_social: newClientName.trim(),
+            tipo_documento: newClientDocType,
+            numero_documento: docNum,
+            direccion: newClientAddress.trim() || undefined,
+            email: newClientEmail.trim() || undefined,
+            es_socio: false
+          });
+        }
+      }
     }
 
     // Default checkout allocations to 100% Cash by default
@@ -479,7 +648,13 @@ export default function POSSystem({
       return;
     }
 
-    const clientObj = clients.find(c => c.id === selectedClientId);
+    let clientObj = clients.find(c => c.id === selectedClientId);
+    if (clientSearchType === 'new' && newClientDocNum.trim()) {
+      const found = clients.find(c => c.numero_documento === newClientDocNum.trim());
+      if (found) {
+        clientObj = found;
+      }
+    }
 
     // Double check prescription
     if (requiresRecipe) {
@@ -500,7 +675,7 @@ export default function POSSystem({
       id: finalId,
       id_sucursal: selectedBranchId,
       id_usuario: activeUser.id,
-      id_cliente: selectedClientId === 'cli-default' ? undefined : selectedClientId,
+      id_cliente: clientObj ? (clientObj.id === 'cli-default' ? undefined : clientObj.id) : undefined,
       tipo_comprobante: docType,
       serie_comprobante: series,
       numero_comprobante: num_correlativo,
@@ -514,14 +689,17 @@ export default function POSSystem({
 
     const detailRecords: Omit<DetalleVenta, 'id' | 'id_venta'>[] = cart.map(item => {
       const discountedUnit = getCartItemUnitPrice(item);
+      const total_item = item.cantidad * discountedUnit;
+      const subtotal_item = total_item / 1.18;
+      const igv_item = total_item - subtotal_item;
       return {
         id_producto: item.producto.id,
         id_lote: item.lote.id,
         numero_lote: item.lote.numero_lote,
         cantidad: item.cantidad,
         precio_unitario: discountedUnit,
-        igv_item: (item.cantidad * discountedUnit) * 0.18,
-        total_item: (item.cantidad * discountedUnit) * 1.18
+        igv_item: igv_item,
+        total_item: total_item
       };
     });
 
@@ -586,7 +764,7 @@ export default function POSSystem({
           lot: item.lote.numero_lote,
           qty: item.cantidad,
           unit: discountedUnit,
-          tot: item.cantidad * discountedUnit * 1.18
+          tot: item.cantidad * discountedUnit
         };
       })
     };
@@ -595,6 +773,9 @@ export default function POSSystem({
     // Assembly of Document Context for real native printing and PDF generation
     const detailsContextList = cart.map((item, index) => {
       const discountedUnit = getCartItemUnitPrice(item);
+      const total_item = item.cantidad * discountedUnit;
+      const subtotal_item = total_item / 1.18;
+      const igv_item = total_item - subtotal_item;
       return {
         id: `det-${Date.now()}-${index}`,
         id_venta: finalId,
@@ -603,8 +784,8 @@ export default function POSSystem({
         numero_lote: item.lote.numero_lote,
         cantidad: item.cantidad,
         precio_unitario: discountedUnit,
-        igv_item: (item.cantidad * discountedUnit) * 0.18,
-        total_item: (item.cantidad * discountedUnit) * 1.18,
+        igv_item: igv_item,
+        total_item: total_item,
         productoName: item.producto.nombre,
         principioActivo: item.producto.principio_activo,
         concentra: item.producto.concentracion
@@ -640,7 +821,7 @@ export default function POSSystem({
   // Helper lots of current branch
   const activeBranchLots = lots.filter(l => l.id_sucursal === selectedBranchId && l.stock > 0);
   const availableProductIds = Array.from(new Set(activeBranchLots.map(l => l.id_producto)));
-  const availableProducts = products.filter(p => availableProductIds.includes(p.id));
+  const availableProducts = products.filter(p => p.activo !== false && availableProductIds.includes(p.id));
 
   // Search filtered products with robust multi-field predictive lookup (rebounding on >=3 characters)
   const filteredProducts = (() => {
@@ -1015,10 +1196,10 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
                   <div className="flex items-center gap-4 self-stretch sm:self-auto justify-between">
                     <div className="text-right">
                       <span className="text-xs font-bold font-mono text-slate-800 block">
-                        {item.cantidad} unids x S/ {item.lote.precio_venta.toFixed(2)}
+                        {item.cantidad} unids x S/ {getCartItemUnitPrice(item).toFixed(2)}
                       </span>
                       <span className="text-[10px] font-extrabold text-blue-700 font-mono block mt-0.5">
-                        Item c/IGV: S/ {(item.cantidad * item.lote.precio_venta * 1.18).toFixed(2)}
+                        Importe: S/ {(item.cantidad * getCartItemUnitPrice(item)).toFixed(2)}
                       </span>
                     </div>
                     <button
@@ -1178,8 +1359,8 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setDocType('Boleta')}
-                  className={`py-2 text-[11px] font-bold rounded-lg border transition-all ${
+                  onClick={() => changeDocType('Boleta')}
+                  className={`py-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
                     docType === 'Boleta'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                       : 'bg-slate-50 text-slate-600 border-slate-205 hover:bg-slate-100'
@@ -1189,8 +1370,8 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDocType('Factura')}
-                  className={`py-2 text-[11px] font-bold rounded-lg border transition-all ${
+                  onClick={() => changeDocType('Factura')}
+                  className={`py-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
                     docType === 'Factura'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                       : 'bg-slate-50 text-slate-600 border-slate-205 hover:bg-slate-100'
@@ -1203,33 +1384,173 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
 
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="block text-[10px] font-bold text-slate-600">Cliente Fiscal</label>
+                <label className="block text-[10px] font-bold text-slate-600">Cliente / Receptor</label>
                 {clientIsSocio && (
                   <span className="bg-indigo-100 text-indigo-750 font-black text-[9px] px-2 py-0.5 rounded-full animate-pulse border border-indigo-250">
                     ★ SOCIO PREFERENCIAL ACTIVO (-15%)
                   </span>
                 )}
               </div>
-              <select
-                value={selectedClientId}
-                onChange={(e) => setSelectedClientId(e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 bg-slate-50 font-sans ${
-                  clientIsSocio 
-                    ? 'border-indigo-400 focus:ring-indigo-500 bg-indigo-50/10 text-indigo-900 font-extrabold'
-                    : 'border-slate-205 focus:ring-blue-550'
-                }`}
-              >
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre_razon_social} ({c.tipo_documento} {c.numero_documento}){c.es_socio ? ' ★ SOCIO' : ''}
-                  </option>
-                ))}
-              </select>
 
-              {clientIsSocio && (
-                <div className="bg-indigo-50 border border-indigo-150 p-2.5 rounded-lg text-indigo-900 text-[10px] mt-2 leading-relaxed animate-in slide-in-from-top-1">
-                  <span className="font-extrabold block">🏷 Tarifa de Socio Aplicada</span>
-                  <p className="text-[9.5px]">Los precios de venta del carro fueron reducidos en un 15% de descuento por afiliación.</p>
+              {/* Navigation Tabs for Client Type Selection */}
+              <div className="grid grid-cols-2 gap-1 mb-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200/40 dark:border-slate-700/40">
+                <button
+                  type="button"
+                  onClick={() => setClientSearchType('existing')}
+                  className={`py-1.5 text-[10.5px] font-extrabold rounded-md cursor-pointer transition-all ${
+                    clientSearchType === 'existing'
+                      ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Buscar Existente 🔍
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClientSearchType('new')}
+                  className={`py-1.5 text-[10.5px] font-extrabold rounded-md cursor-pointer transition-all ${
+                    clientSearchType === 'new'
+                      ? 'bg-blue-600 dark:bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Registrar Nuevo / Consultar 👤
+                </button>
+              </div>
+
+              {clientSearchType === 'existing' ? (
+                <div>
+                  <select
+                    value={selectedClientId}
+                    onChange={(e) => setSelectedClientId(e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 bg-slate-50 font-sans text-xs cursor-pointer ${
+                      clientIsSocio 
+                        ? 'border-indigo-400 focus:ring-indigo-500 bg-indigo-50/10 text-indigo-900 font-extrabold'
+                        : 'border-slate-205 focus:ring-blue-550'
+                    }`}
+                  >
+                    {/* Filter based on Factura/Boleta requirements */}
+                    {clients
+                      .filter(c => docType === 'Boleta' ? true : c.tipo_documento === 'RUC')
+                      .map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.nombre_razon_social} ({c.tipo_documento} {c.numero_documento}){c.es_socio ? ' ★ SOCIO' : ''}
+                        </option>
+                      ))
+                    }
+                    {docType === 'Factura' && clients.filter(c => c.tipo_documento === 'RUC').length === 0 && (
+                      <option value="" disabled>
+                        ⚠️ No hay clientes registrados con RUC
+                      </option>
+                    )}
+                  </select>
+
+                  {docType === 'Factura' && clients.filter(c => c.tipo_documento === 'RUC').length === 0 && (
+                    <p className="text-[10px] text-amber-700 mt-1 leading-tight">
+                      * No tiene clientes con RUC registrados. Use "Registrar Nuevo" para realizar la consulta SUNAT y autocompletar.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                /* Registrar Nuevo client form */
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700 text-[10px]">Identificación del Cliente</span>
+                    <div className="flex gap-1.5">
+                      {docType === 'Factura' ? (
+                        <span className="bg-blue-100 text-blue-800 text-[9.5px] px-2 py-0.5 rounded font-extrabold uppercase font-mono">
+                          Requerido: RUC
+                        </span>
+                      ) : (
+                        <div className="flex bg-slate-200 rounded p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => { setNewClientDocType('DNI'); setConsultMsg(''); }}
+                            className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer ${
+                              newClientDocType === 'DNI' ? 'bg-blue-600 text-white' : 'text-slate-650'
+                            }`}
+                          >
+                            DNI
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setNewClientDocType('RUC'); setConsultMsg(''); }}
+                            className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer ${
+                              newClientDocType === 'RUC' ? 'bg-blue-600 text-white' : 'text-slate-650'
+                            }`}
+                          >
+                            RUC
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-1 bg-white p-0.5 rounded border border-slate-205">
+                    <input
+                      type="text"
+                      maxLength={newClientDocType === 'RUC' ? 11 : 8}
+                      placeholder={newClientDocType === 'RUC' ? "RUC de 11 dígitos" : "DNI de 8 dígitos"}
+                      value={newClientDocNum}
+                      onChange={(e) => { setNewClientDocNum(e.target.value.replace(/\D/g, '')); setConsultMsg(''); }}
+                      className="flex-1 px-2 py-1 focus:outline-hidden font-mono text-xs text-slate-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleConsultDoc}
+                      disabled={isQueryingRUC}
+                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded text-[9.5px] flex items-center gap-1 shrink-0 disabled:bg-slate-400 cursor-pointer"
+                    >
+                      {isQueryingRUC ? 'Espere...' : `Consultar ${newClientDocType}`}
+                    </button>
+                  </div>
+
+                  {consultMsg && (
+                    <p className={`text-[9.5px] font-mono leading-tight p-1 bg-white rounded border border-slate-100 ${consultMsg.startsWith('❌') ? 'text-red-650' : 'text-emerald-700 font-bold'}`}>
+                      {consultMsg}
+                    </p>
+                  )}
+
+                  <div className="space-y-1.5 pt-1">
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 block mb-0.5">
+                        {newClientDocType === 'RUC' ? 'Razón Social Fiscal' : 'Nombres y Apellidos'} {docType === 'Factura' && <span className="text-red-500">*</span>}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={newClientDocType === 'RUC' ? "Ej. PHARMA CORP PERU S.A.C." : "Ej. Doris Quispe Mamani"}
+                        value={newClientName}
+                        onChange={(e) => setNewClientName(e.target.value)}
+                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 block mb-0.5">
+                        {newClientDocType === 'RUC' ? 'Dirección Fiscal' : 'Dirección'} {docType === 'Factura' && <span className="text-red-500">*</span>}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Av. Principal N° 123 - Lince, Lima"
+                        value={newClientAddress}
+                        onChange={(e) => setNewClientAddress(e.target.value)}
+                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-bold text-slate-500 block mb-0.5">
+                        Correo Electrónico {docType === 'Factura' && <span className="text-red-500">*</span>}
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="cliente@dominio.com.pe"
+                        value={newClientEmail}
+                        onChange={(e) => setNewClientEmail(e.target.value)}
+                        className="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1241,7 +1562,7 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
               className={`w-full py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 shadow-xs border cursor-pointer ${
                 cart.length === 0
                   ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-650 active:scale-95'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-650 active:scale-95 shadow-sm'
               }`}
             >
               <Send className="w-4 h-4" />
@@ -1524,6 +1845,350 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
           </div>
         </div>
       )}
+
+      {/* --- MODAL PASARELA DE PAGO MULTI-MÉTODO --- */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 bg-slate-900/70 flex items-center justify-center z-50 p-4 backdrop-blur-xs font-sans overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto">
+            {/* Header / Resumen del Recibo */}
+            <div className="p-5 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex justify-between items-center">
+              <div>
+                <span className="bg-blue-600/50 backdrop-blur-xs text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full border border-blue-400/30 font-mono">
+                  {docType === 'Factura' ? 'Facturación de Factura Electrónica' : 'Facturación de Boleta de Venta'}
+                </span>
+                <h3 className="text-lg font-black mt-1 flex items-center gap-1.5">
+                  <Coins className="w-5 h-5 text-amber-300" />
+                  Módulo de Cobro & Pasarela de Pago
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowCheckoutModal(false)}
+                className="text-white/80 hover:text-white font-bold bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition-all text-sm w-8 h-8 flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Resumen del Cliente y Descuento Socio */}
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-150 flex flex-wrap gap-4 justify-between items-center">
+              <div>
+                <span className="block text-[9.5px] text-slate-400 font-bold uppercase tracking-wide">Cliente del Comprobante</span>
+                <span className="font-bold text-slate-800">
+                  {clients.find(c => c.id === selectedClientId)?.nombre_razon_social || 'Clientes Varios (Anónimo)'}
+                </span>
+              </div>
+              
+              <div className="text-right">
+                <span className="block text-[9.5px] text-slate-400 font-bold uppercase tracking-wide">Total Neto a Cobrar</span>
+                <span className="text-xl font-black text-blue-700 font-mono">
+                  S/ {cartTotal.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Shortcuts */}
+            <div className="px-6 pt-4 pb-1">
+              <span className="block text-[10px] text-slate-400 font-bold uppercase mb-2 tracking-wide">Métodos de Pago Rápidos (100%)</span>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckoutCashAmt(cartTotal.toFixed(2));
+                    setCheckoutYapeAmt('0');
+                    setCheckoutCardAmt('0');
+                  }}
+                  className={`py-2 px-3 rounded-lg border text-center font-bold text-xs transition-all cursor-pointer ${
+                    Math.abs(Number(checkoutCashAmt || 0) - cartTotal) < 0.01 && Number(checkoutYapeAmt || 0) === 0 && Number(checkoutCardAmt || 0) === 0
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-800 shadow-xs'
+                      : 'bg-white border-slate-205 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  💵 100% Efectivo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckoutCashAmt('0');
+                    setCheckoutYapeAmt(cartTotal.toFixed(2));
+                    setCheckoutCardAmt('0');
+                  }}
+                  className={`py-2 px-3 rounded-lg border text-center font-bold text-xs transition-all cursor-pointer ${
+                    Math.abs(Number(checkoutYapeAmt || 0) - cartTotal) < 0.01 && Number(checkoutCashAmt || 0) === 0 && Number(checkoutCardAmt || 0) === 0
+                      ? 'bg-indigo-50 border-indigo-500 text-indigo-805 shadow-xs'
+                      : 'bg-white border-slate-205 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  📱 100% Yape / Plin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckoutCashAmt('0');
+                    setCheckoutYapeAmt('0');
+                    setCheckoutCardAmt(cartTotal.toFixed(2));
+                  }}
+                  className={`py-2 px-3 rounded-lg border text-center font-bold text-xs transition-all cursor-pointer ${
+                    Math.abs(Number(checkoutCardAmt || 0) - cartTotal) < 0.01 && Number(checkoutCashAmt || 0) === 0 && Number(checkoutYapeAmt || 0) === 0
+                      ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs'
+                      : 'bg-white border-slate-205 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  💳 100% Tarjeta
+                </button>
+              </div>
+            </div>
+
+            {/* Payment breakdowns (Custom / Split Inputs) */}
+            <div className="p-6 space-y-4 max-h-[380px] overflow-y-auto">
+              {/* SECTION A: CASH */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-xs text-slate-700 flex items-center gap-1">
+                    💸 A. Pago en Efectivo (Soles)
+                  </span>
+                  <div className="relative w-36">
+                    <span className="absolute left-2.5 top-1 font-mono text-slate-400 font-semibold text-[10px]">S/</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={checkoutCashAmt}
+                      onChange={(e) => setCheckoutCashAmt(e.target.value)}
+                      className="w-full text-right pr-2 pl-6 py-0.5 border border-slate-205 rounded font-bold font-mono text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {Number(checkoutCashAmt || 0) > 0 && (
+                  <div className="grid grid-cols-2 gap-4 pt-1 animate-in slide-in-from-top-1">
+                    <div>
+                      <label className="block text-[9.5px] font-bold text-slate-500 mb-1">Monto Entregado por Cliente</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1.5 text-slate-400 font-bold text-xs">S/</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Con cuánto paga..."
+                          value={checkoutCashPaid}
+                          onChange={(e) => setCheckoutCashPaid(e.target.value)}
+                          className="w-full pl-6 pr-2 py-1 border border-slate-205 rounded font-mono font-bold text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="bg-emerald-50 border border-emerald-150 rounded-lg p-2.5 flex flex-col justify-center text-center">
+                      <span className="block text-[8.5px] font-black uppercase text-emerald-800 tracking-wide">Vuelto Exacto</span>
+                      <span className="font-black text-emerald-700 text-base font-mono">
+                        S/ {Math.max(0, Number(checkoutCashPaid || 0) - Number(checkoutCashAmt || 0)).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION B: YAPE / PLIN */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-xs text-slate-700 flex items-center gap-1">
+                    📱 B. Billeteras Digitales (Yape / Plin)
+                  </span>
+                  <div className="relative w-36">
+                    <span className="absolute left-2.5 top-1 font-mono text-slate-400 font-semibold text-[10px]">S/</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={checkoutYapeAmt}
+                      onChange={(e) => setCheckoutYapeAmt(e.target.value)}
+                      className="w-full text-right pr-2 pl-6 py-0.5 border border-slate-205 rounded font-bold font-mono text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {Number(checkoutYapeAmt || 0) > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1 animate-in slide-in-from-top-1 items-center bg-white p-3 rounded-lg border border-indigo-100">
+                    <div className="sm:col-span-4 flex flex-col items-center justify-center p-2 bg-slate-50 rounded border border-slate-150">
+                      <QrCode className="w-14 h-14 text-slate-800 animate-pulse" />
+                      <span className="text-[8px] font-bold text-indigo-700 uppercase mt-1 tracking-wide">QR DE LA BOTICA</span>
+                    </div>
+                    <div className="sm:col-span-8 space-y-2">
+                      <p className="text-[9.5px] text-slate-500 leading-snug">
+                        Muestre el código QR al cliente. Una vez verificado el abono en el celular o monitor, digite obligatoriamente los 4 últimos dígitos de la operación del Yape / Plin.
+                      </p>
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">Últimos 4 Dígitos de Operación *</label>
+                        <input
+                          type="text"
+                          required
+                          maxLength={6}
+                          placeholder="Ej: 9815"
+                          value={checkoutYapeVoucher}
+                          onChange={(e) => setCheckoutYapeVoucher(e.target.value.replace(/\D/g, ''))}
+                          className="w-full px-2.5 py-1 border border-slate-205 rounded font-mono font-bold text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        />
+                        {checkoutYapeVoucher.trim().length < 4 && (
+                          <span className="text-rose-600 text-[8.5px] font-semibold block mt-1">★ Requerido (últimos 4 dígitos numéricos)</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION C: CARD / TELEFONÍA / TARJETAS */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-xs text-slate-700 flex items-center gap-1">
+                    💳 C. Tarjetas (Crédito o Débito)
+                  </span>
+                  <div className="relative w-36">
+                    <span className="absolute left-2.5 top-1 font-mono text-slate-400 font-semibold text-[10px]">S/</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={checkoutCardAmt}
+                      onChange={(e) => setCheckoutCardAmt(e.target.value)}
+                      className="w-full text-right pr-2 pl-6 py-0.5 border border-slate-205 rounded font-bold font-mono text-xs focus:ring-1 focus:ring-blue-550 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {Number(checkoutCardAmt || 0) > 0 && (
+                  <div className="grid grid-cols-2 gap-3 pt-1 animate-in slide-in-from-top-1 bg-white p-3 rounded-lg border border-blue-100">
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">Terminal de Pago</label>
+                      <select
+                        value={checkoutCardTerminal}
+                        onChange={(e) => setCheckoutCardTerminal(e.target.value as 'Niubiz' | 'IziPay')}
+                        className="w-full px-2 py-1 border border-slate-205 rounded font-sans font-bold text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white"
+                      >
+                        <option value="Niubiz">Niubiz POS</option>
+                        <option value="IziPay">IziPay POS</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-slate-500 mb-1">N° de Referencia Voucher *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej: 0045"
+                        value={checkoutCardRef}
+                        onChange={(e) => setCheckoutCardRef(e.target.value.replace(/\D/g, ''))}
+                        className="w-full px-2.5 py-1 border border-slate-205 rounded font-mono font-bold text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      />
+                      {checkoutCardRef.trim().length === 0 && (
+                        <span className="text-rose-600 text-[8.5px] font-semibold block mt-1">★ Campo Requerido</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Calculations Status Box */}
+            {(() => {
+              const totalAllocated = Number(checkoutCashAmt || 0) + Number(checkoutYapeAmt || 0) + Number(checkoutCardAmt || 0);
+              const diff = cartTotal - totalAllocated;
+              const isBalanced = Math.abs(diff) < 0.05;
+              const isOverAllocated = diff < -0.05;
+
+              const yapeFilledCorrect = Number(checkoutYapeAmt || 0) === 0 || checkoutYapeVoucher.trim().length >= 4;
+              const cardFilledCorrect = Number(checkoutCardAmt || 0) === 0 || checkoutCardRef.trim().length > 0;
+              const formsValid = isBalanced && yapeFilledCorrect && cardFilledCorrect;
+
+              return (
+                <div className="border-t border-slate-200 bg-slate-50">
+                  {/* Visual Status Indicator */}
+                  <div className={`p-4 text-xs font-semibold flex items-center justify-between border-b border-slate-150 ${
+                    isBalanced 
+                      ? 'bg-emerald-50 text-emerald-800' 
+                      : isOverAllocated 
+                        ? 'bg-rose-50 text-rose-800 animate-pulse'
+                        : 'bg-amber-50 text-amber-900'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      {isBalanced ? (
+                        <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                      )}
+                      <div>
+                        <span className="font-bold">Distribución del Pago:</span>
+                        <p className="text-[10.5px] text-slate-500 font-mono">
+                          Asignado: S/ {totalAllocated.toFixed(2)} | Esperado: S/ {cartTotal.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {!isBalanced && (
+                      <div className="flex items-center gap-1.5">
+                        {isOverAllocated ? (
+                          <span className="font-bold font-mono">Exceso: S/ {Math.abs(diff).toFixed(2)}</span>
+                        ) : (
+                          <>
+                            <span className="font-bold font-mono text-amber-800">Incompleto: S/ {diff.toFixed(2)}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Add remaining to cash
+                                const currentCash = Number(checkoutCashAmt || 0);
+                                setCheckoutCashAmt((currentCash + diff).toFixed(2));
+                              }}
+                              className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] px-2.5 py-1 rounded shadow-xs cursor-pointer hover:scale-105 active:scale-95 transition-all"
+                            >
+                              + Cuadrar con Efectivo
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {isBalanced && (
+                      <span className="bg-emerald-100 text-emerald-850 border border-emerald-250 font-black text-[9px] px-2.5 py-1 rounded-full uppercase tracking-wide">
+                        ✔ Caja Lista
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Operational validation messages */}
+                  {(!yapeFilledCorrect || !cardFilledCorrect) && (
+                    <div className="bg-rose-50 border-b border-slate-150 p-3 text-[10px] text-rose-800 space-y-0.5 font-sans">
+                      <strong>Campos obligatorios requeridos:</strong>
+                      {!yapeFilledCorrect && <p>• Ingrese los 4 últimos dígitos del voucher de operacion de Yape / Plin.</p>}
+                      {!cardFilledCorrect && <p>• Ingrese el número de referencia del voucher de tarjeta POS (Niubiz/IziPay).</p>}
+                    </div>
+                  )}
+
+                  {/* Actions bar */}
+                  <div className="p-4 flex justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowCheckoutModal(false)}
+                      className="px-4 py-2 bg-white border border-slate-205 rounded-xl font-bold font-sans text-slate-600 hover:text-slate-900 text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+                    >
+                      Volver al Carrito
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!formsValid}
+                      onClick={handleProcessSale}
+                      className={`px-5 py-2.5 rounded-xl font-bold font-sans text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                        formsValid
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+                          : 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed'
+                      }`}
+                    >
+                      <TicketCheck className="w-4 h-4" />
+                      Emitir {docType === 'Factura' ? 'Factura' : 'Boleta'} & Cobrar
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* VENTANA MODAL FLOTANTE (BOTONERA INTERFAZ POS DE COMPROBANTES) */}
       {showPrintModal && lastSaleContext && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
@@ -1657,10 +2322,10 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
                           setShareInput('');
                           setShareToast('');
                         }}
-                        className={`flex-1 py-1.5 rounded-lg font-bold text-[10.5px] border cursor-pointer text-center ${
+                        className={`flex-1 py-1.5 rounded-lg font-bold text-[10.5px] border cursor-pointer text-center transition-all ${
                           shareChannel === 'whatsapp'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/45 text-emerald-800 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-705'
                         }`}
                       >
                         WhatsApp
@@ -1672,10 +2337,10 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
                           setShareInput(lastSaleContext.client?.email || '');
                           setShareToast('');
                         }}
-                        className={`flex-1 py-1.5 rounded-lg font-bold text-[10.5px] border cursor-pointer text-center ${
+                        className={`flex-1 py-1.5 rounded-lg font-bold text-[10.5px] border cursor-pointer text-center transition-all ${
                           shareChannel === 'email'
-                            ? 'bg-blue-50 text-blue-800 border-blue-300'
-                            : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                            ? 'bg-blue-50 dark:bg-blue-950/45 text-blue-800 dark:text-blue-400 border-blue-300 dark:border-blue-800'
+                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-705'
                         }`}
                       >
                         Correo Electrónico

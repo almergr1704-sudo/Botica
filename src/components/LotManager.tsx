@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Calendar, ShieldAlert, CheckCircle, Trash2, HelpCircle, FileSpreadsheet, Building2, AlertTriangle } from 'lucide-react';
 import { Lote, Producto, Sucursal } from '../types/pharmacy';
+import TransactionalPagination from './TransactionalPagination';
 
 interface LotManagerProps {
   lots: Lote[];
@@ -9,6 +10,7 @@ interface LotManagerProps {
   onAddLot: (newLot: Omit<Lote, 'id'>) => void;
   onDeleteLot: (id: string) => void;
   onClearExpired: () => void;
+  onUpdateLot?: (updatedLot: Lote) => void;
 }
 
 export default function LotManager({
@@ -17,12 +19,22 @@ export default function LotManager({
   branches,
   onAddLot,
   onDeleteLot,
-  onClearExpired
+  onClearExpired,
+  onUpdateLot
 }: LotManagerProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('');
   const [expiryStatusFilter, setExpiryStatusFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reset to first page when filtering/searching changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedBranchFilter, expiryStatusFilter]);
 
   // Form states
   const [newLotProduct, setNewLotProduct] = useState('');
@@ -231,87 +243,111 @@ export default function LotManager({
             No se encontraron lotes de inventario que correspondan a su búsqueda.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left text-slate-600 font-sans">
-              <thead className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-                <tr>
-                  <th className="py-3 px-5">Medicamento / Presentación</th>
-                  <th className="py-3 px-5">Ubicación / Sucursal</th>
-                  <th className="py-3 px-5">N° Lote</th>
-                  <th className="py-3 px-5">Vencimiento / Días Restantes</th>
-                  <th className="py-3 px-5">Stock Físico</th>
-                  <th className="py-3 px-5 text-right">Precios</th>
-                  <th className="py-3 px-5 text-center">Acciones Normativas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredLots.map(lote => {
-                  const prod = products.find(p => p.id === lote.id_producto);
-                  const branch = branches.find(b => b.id === lote.id_sucursal);
-                  const days = getDaysDiff(lote.fecha_vencimiento);
-                  const expiryUI = getExpirationStatus(days);
+          <div>
+            <div className="overflow-x-auto table-responsive-container">
+              <table className="w-full text-xs text-left text-slate-600 font-sans table-layout-fixed-custom">
+                <colgroup>
+                  <col className="w-[24%] min-w-[180px]" />
+                  <col className="w-[15%] min-w-[110px]" />
+                  <col className="w-[11%] min-w-[80px]" />
+                  <col className="w-[20%] min-w-[150px]" />
+                  <col className="w-[12%] min-w-[90px]" />
+                  <col className="w-[10%] min-w-[100px]" />
+                  <col className="w-[8%] min-w-[130px]" />
+                </colgroup>
+                <thead className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th className="py-3 px-5">Medicamento / Presentación</th>
+                    <th className="py-3 px-5">Ubicación / Sucursal</th>
+                    <th className="py-3 px-5">N° Lote</th>
+                    <th className="py-3 px-5">Vencimiento / Días Restantes</th>
+                    <th className="py-3 px-5">Stock Físico</th>
+                    <th className="py-3 px-5 text-right">Precios</th>
+                    <th className="py-3 px-5 text-center">Acciones Normativas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredLots.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(lote => {
+                    const prod = products.find(p => p.id === lote.id_producto);
+                    const branch = branches.find(b => b.id === lote.id_sucursal);
+                    const days = getDaysDiff(lote.fecha_vencimiento);
+                    const expiryUI = getExpirationStatus(days);
 
-                  return (
-                    <tr key={lote.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-5">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800 text-sm">{prod?.nombre}</span>
-                          <span className="text-[10px] text-slate-400 mt-0.5">{prod?.principio_activo} • {prod?.presentacion}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-5">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-slate-700">{branch?.nombre.split(' - ')[1]}</span>
-                          <span className="text-[10px] text-slate-450">{branch?.ciudad}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-5 font-mono font-bold text-blue-600">{lote.numero_lote}</td>
-                      <td className="py-3 px-5">
-                        <div className="flex flex-col gap-1">
-                          <span className="font-mono text-slate-700 font-semibold">{lote.fecha_vencimiento}</span>
-                          <span className={`inline-block text-[10px] px-2 py-0.5 rounded border font-semibold w-max ${expiryUI.color}`}>
-                            {expiryUI.label} {days < 0 ? `(${Math.abs(days)}d vencido)` : `(${days} días)`}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-5">
-                        <div className="flex flex-col">
-                          <span className={`font-mono text-sm font-bold ${lote.stock <= 15 ? 'text-red-600' : 'text-slate-800'}`}>
-                            {lote.stock} / {lote.stock_inicial}
-                          </span>
-                          <span className="text-[9px] text-slate-400">unidades restantes</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-5 text-right font-mono">
-                        <div className="flex flex-col text-[10px]/tight text-slate-450">
-                          <div><span className="font-medium text-slate-500">Compra:</span> S/ {lote.precio_compra.toFixed(2)}</div>
-                          <div className="font-bold text-slate-800 text-xs mt-0.5">PV: S/ {lote.precio_venta.toFixed(2)}</div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-5 text-center">
-                        {days < 0 ? (
-                          <button
-                            onClick={() => handleSimulateDisposal(lote)}
-                            className="inline-flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-2.5 py-1.5 rounded transition-all shadow-sm"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Retirar (Destrucción)
-                          </button>
-                        ) : days <= 95 ? (
-                          <span className="text-[10px] text-amber-700 font-bold bg-amber-50 border border-amber-100 rounded px-2 py-1 flex items-center gap-1 justify-center max-w-[140px] mx-auto">
-                            <AlertTriangle className="w-3.5 h-3.5" /> Priorizar Venta
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-emerald-800 font-semibold bg-emerald-50 border border-emerald-150 rounded px-2 py-1 inline-block">
-                            Stock Disponible
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    return (
+                      <tr key={lote.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-5 overflow-hidden">
+                          <div className="flex flex-col max-w-full">
+                            <span className="font-bold text-slate-800 text-sm truncate" title={prod?.nombre}>{prod?.nombre}</span>
+                            <span className="text-[10px] text-slate-400 mt-0.5 truncate" title={`${prod?.principio_activo} • ${prod?.presentacion}`}>
+                              {prod?.principio_activo} • {prod?.presentacion}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-5 overflow-hidden">
+                          <div className="flex flex-col max-w-full">
+                            <span className="font-semibold text-slate-700 truncate">{branch?.nombre.split(' - ')[1]}</span>
+                            <span className="text-[10px] text-slate-450 truncate">{branch?.ciudad}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-5 font-mono font-bold text-blue-600 truncate">{lote.numero_lote}</td>
+                        <td className="py-3 px-5 overflow-hidden">
+                          <div className="flex flex-col gap-1 max-w-full">
+                            <span className="font-mono text-slate-700 font-semibold">{lote.fecha_vencimiento}</span>
+                            <span className={`inline-block text-[10px] px-2 py-0.5 rounded border font-semibold w-max truncate max-w-full ${expiryUI.color}`} title={expiryUI.label}>
+                              {expiryUI.label} {days < 0 ? `(${Math.abs(days)}d vencido)` : `(${days} d)`}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-5">
+                          <div className="flex flex-col">
+                            <span className={`font-mono text-sm font-bold ${lote.stock <= 15 ? 'text-red-650 animate-pulse font-black' : 'text-slate-800'}`}>
+                              {lote.stock} / {lote.stock_inicial}
+                            </span>
+                            <span className="text-[9px] text-slate-400">unidades restantes</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-5 text-right font-mono">
+                          <div className="flex flex-col text-[10px]/tight text-slate-450">
+                            <div className="truncate"><span className="font-medium text-slate-500">Compra:</span> S/ {lote.precio_compra.toFixed(2)}</div>
+                            <div className="font-bold text-slate-800 text-xs mt-0.5 truncate">PV: S/ {lote.precio_venta.toFixed(2)}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-5 text-center whitespace-nowrap">
+                          {days < 0 ? (
+                            <button
+                              onClick={() => handleSimulateDisposal(lote)}
+                              className="inline-flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-2.5 py-1.5 rounded transition-all shadow-sm cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Retirar (Destrucción)
+                            </button>
+                          ) : days <= 95 ? (
+                            <span className="text-[10px] text-amber-700 font-bold bg-amber-50 border border-amber-100 rounded px-2 py-1 flex items-center gap-1 justify-center max-w-[140px] mx-auto">
+                              <AlertTriangle className="w-3.5 h-3.5" /> Priorizar Venta
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-800 font-semibold bg-emerald-50 border border-emerald-150 rounded px-2 py-1 inline-block">
+                              Stock Disponible
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls footer */}
+            <div className="border-t border-slate-100 p-4">
+              <TransactionalPagination
+                currentPage={currentPage}
+                totalItems={filteredLots.length}
+                pageSize={pageSize}
+                onPageChange={(p) => setCurrentPage(p)}
+                onPageSizeChange={(s) => setPageSize(s)}
+              />
+            </div>
           </div>
         )}
       </div>

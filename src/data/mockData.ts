@@ -361,7 +361,9 @@ export const INITIAL_USUARIOS: Usuario[] = [
     nombre: 'Arq. Luis Alejandro (Admin)',
     rol: 'Administrador',
     id_sucursal: 'suc-01',
-    activo: true
+    activo: true,
+    password: 'AdminPassword123!',
+    requiere_cambio_password: false
   },
   {
     id: 'usr-02',
@@ -369,7 +371,9 @@ export const INITIAL_USUARIOS: Usuario[] = [
     nombre: 'Dra. Patricia Mendoza Cruz (Química Regente)',
     rol: 'FarmaceuticoRegente',
     id_sucursal: 'suc-01',
-    activo: true
+    activo: true,
+    password: 'MendozaPassword1!',
+    requiere_cambio_password: false
   },
   {
     id: 'usr-03',
@@ -377,6 +381,18 @@ export const INITIAL_USUARIOS: Usuario[] = [
     nombre: 'Sofía Quispe Pineda (Cajera)',
     rol: 'Cajero',
     id_sucursal: 'suc-01',
-    activo: true
+    activo: true,
+    password: 'SofiaPassword1!',
+    requiere_cambio_password: false
+  },
+  {
+    id: 'usr-04',
+    username: 'almacen.carlos',
+    nombre: 'Carlos Gonzales (Almacenero / Logística)',
+    rol: 'Almacenero',
+    id_sucursal: 'suc-01',
+    activo: true,
+    password: 'CarlosPassword1!',
+    requiere_cambio_password: false
   }
 ];

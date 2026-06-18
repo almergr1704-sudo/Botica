@@ -9,6 +9,12 @@ interface ClientSupplierManagerProps {
   onAddBranch: (branch: Omit<Sucursal, 'id'>) => void;
   onAddClient: (client: Omit<Cliente, 'id'>) => void;
   onAddSupplier: (supplier: Omit<Proveedor, 'id'>) => void;
+  onUpdateBranch?: (branch: Sucursal) => void;
+  onDeleteBranch?: (id: string) => void;
+  onUpdateClient?: (client: Cliente) => void;
+  onDeleteClient?: (id: string) => void;
+  onUpdateSupplier?: (supplier: Proveedor) => void;
+  onDeleteSupplier?: (id: string) => void;
 }
 
 export default function ClientSupplierManager({
@@ -17,7 +23,13 @@ export default function ClientSupplierManager({
   suppliers,
   onAddBranch,
   onAddClient,
-  onAddSupplier
+  onAddSupplier,
+  onUpdateBranch,
+  onDeleteBranch,
+  onUpdateClient,
+  onDeleteClient,
+  onUpdateSupplier,
+  onDeleteSupplier
 }: ClientSupplierManagerProps) {
   const [activeSegment, setActiveSegment] = useState<'branches' | 'clients' | 'suppliers'>('branches');
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,6 +61,188 @@ export default function ClientSupplierManager({
   const [sTel, setSTel] = useState('');
   const [sEmail, setSEmail] = useState('');
   const [sContact, setSContact] = useState('');
+
+  // Branch edit / delete states
+  const [editingBranch, setEditingBranch] = useState<Sucursal | null>(null);
+  const [showEditBranchModal, setShowEditBranchModal] = useState(false);
+  const [ebNo, setEbNo] = useState('');
+  const [ebDir, setEbDir] = useState('');
+  const [ebUbi, setEbUbi] = useState('');
+  const [ebCiu, setEbCiu] = useState('');
+  const [ebTel, setEbTel] = useState('');
+  const [ebError, setEbError] = useState('');
+  const [deletingBranch, setDeletingBranch] = useState<Sucursal | null>(null);
+  const [showDeleteBranchConfirm, setShowDeleteBranchConfirm] = useState(false);
+
+  // Client edit / delete states
+  const [editingClient, setEditingClient] = useState<Cliente | null>(null);
+  const [showEditClientModal, setShowEditClientModal] = useState(false);
+  const [ecDocType, setEcDocType] = useState<'DNI' | 'RUC'>('DNI');
+  const [ecDocNo, setEcDocNo] = useState('');
+  const [ecName, setEcName] = useState('');
+  const [ecDir, setEcDir] = useState('');
+  const [ecEmail, setEcEmail] = useState('');
+  const [ecError, setEcError] = useState('');
+  const [deletingClient, setDeletingClient] = useState<Cliente | null>(null);
+  const [showDeleteClientConfirm, setShowDeleteClientConfirm] = useState(false);
+
+  // Supplier edit / delete states
+  const [editingSupplier, setEditingSupplier] = useState<Proveedor | null>(null);
+  const [showEditSupplierModal, setShowEditSupplierModal] = useState(false);
+  const [esRuc, setEsRuc] = useState('');
+  const [esSocial, setEsSocial] = useState('');
+  const [esDir, setEsDir] = useState('');
+  const [esTel, setEsTel] = useState('');
+  const [esEmail, setEsEmail] = useState('');
+  const [esContact, setEsContact] = useState('');
+  const [esError, setEsError] = useState('');
+  const [deletingSupplier, setDeletingSupplier] = useState<Proveedor | null>(null);
+  const [showDeleteSupplierConfirm, setShowDeleteSupplierConfirm] = useState(false);
+
+  // Branch helper execution
+  const handleStartEditBranch = (b: Sucursal) => {
+    setEditingBranch(b);
+    setEbNo(b.nombre);
+    setEbDir(b.direccion);
+    setEbUbi(b.ubigeo);
+    setEbCiu(b.ciudad);
+    setEbTel(b.telefono || '');
+    setEbError('');
+    setShowEditBranchModal(true);
+  };
+
+  const handleSaveEditBranch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ebNo || !ebDir || !ebUbi || !ebCiu) {
+      setEbError('Por favor complete todos los campos obligatorios (*).');
+      return;
+    }
+    if (ebUbi.length !== 6) {
+      setEbError('El Ubigeo de la sucursal debe tener exactamente 6 dígitos.');
+      return;
+    }
+    if (editingBranch && onUpdateBranch) {
+      onUpdateBranch({
+        ...editingBranch,
+        nombre: ebNo,
+        direccion: ebDir,
+        ubigeo: ebUbi,
+        ciudad: ebCiu,
+        telefono: ebTel
+      });
+    }
+    setShowEditBranchModal(false);
+    setEditingBranch(null);
+  };
+
+  const handleStartDeleteBranch = (b: Sucursal) => {
+    setDeletingBranch(b);
+    setShowDeleteBranchConfirm(true);
+  };
+
+  const handleConfirmDeleteBranch = () => {
+    if (deletingBranch && onDeleteBranch) {
+      onDeleteBranch(deletingBranch.id);
+    }
+    setShowDeleteBranchConfirm(false);
+    setDeletingBranch(null);
+  };
+
+  // Client helper execution
+  const handleStartEditClient = (c: Cliente) => {
+    setEditingClient(c);
+    setEcDocType(c.tipo_documento);
+    setEcDocNo(c.numero_documento);
+    setEcName(c.nombre_razon_social);
+    setEcDir(c.direccion || '');
+    setEcEmail(c.email || '');
+    setEcError('');
+    setShowEditClientModal(true);
+  };
+
+  const handleSaveEditClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ecDocNo || !ecName) {
+      setEcError('Por favor complete el documento y nombre fiscal.');
+      return;
+    }
+    if (editingClient && onUpdateClient) {
+      onUpdateClient({
+        ...editingClient,
+        tipo_documento: ecDocType,
+        numero_documento: ecDocNo,
+        nombre_razon_social: ecName,
+        direccion: ecDir,
+        email: ecEmail
+      });
+    }
+    setShowEditClientModal(false);
+    setEditingClient(null);
+  };
+
+  const handleStartDeleteClient = (c: Cliente) => {
+    setDeletingClient(c);
+    setShowDeleteClientConfirm(true);
+  };
+
+  const handleConfirmDeleteClient = () => {
+    if (deletingClient && onDeleteClient) {
+      onDeleteClient(deletingClient.id);
+    }
+    setShowDeleteClientConfirm(false);
+    setDeletingClient(null);
+  };
+
+  // Supplier helper execution
+  const handleStartEditSupplier = (s: Proveedor) => {
+    setEditingSupplier(s);
+    setEsRuc(s.ruc);
+    setEsSocial(s.razon_social);
+    setEsDir(s.direccion);
+    setEsTel(s.telefono);
+    setEsEmail(s.email);
+    setEsContact(s.contacto || '');
+    setEsError('');
+    setShowEditSupplierModal(true);
+  };
+
+  const handleSaveEditSupplier = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!esRuc || !esSocial || !esDir || !esTel) {
+      setEsError('Por favor complete todos los campos obligatorios.');
+      return;
+    }
+    if (esRuc.length !== 11) {
+      setEsError('El RUC peruano debe contener exactamente 11 dígitos.');
+      return;
+    }
+    if (editingSupplier && onUpdateSupplier) {
+      onUpdateSupplier({
+        ...editingSupplier,
+        ruc: esRuc,
+        razon_social: esSocial,
+        direccion: esDir,
+        telefono: esTel,
+        email: esEmail,
+        contacto: esContact
+      });
+    }
+    setShowEditSupplierModal(false);
+    setEditingSupplier(null);
+  };
+
+  const handleStartDeleteSupplier = (s: Proveedor) => {
+    setDeletingSupplier(s);
+    setShowDeleteSupplierConfirm(true);
+  };
+
+  const handleConfirmDeleteSupplier = () => {
+    if (deletingSupplier && onDeleteSupplier) {
+      onDeleteSupplier(deletingSupplier.id);
+    }
+    setShowDeleteSupplierConfirm(false);
+    setDeletingSupplier(null);
+  };
 
   const executeApiSearch = () => {
     if (!cDocNo) {
@@ -239,6 +433,24 @@ export default function ClientSupplierManager({
                     <span className="text-slate-800 font-semibold">{b.telefono || 'Sin teléfono'}</span>
                   </div>
                 </div>
+                <div className="pt-2 border-t border-slate-100 flex justify-end gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleStartEditBranch(b)}
+                    className="px-2.5 py-1 bg-slate-50 hover:bg-slate-150 text-slate-750 font-bold rounded-lg border border-slate-200 flex items-center gap-1 transition-all text-[10.5px]"
+                    title="Editar Local"
+                  >
+                    ✏️ Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleStartDeleteBranch(b)}
+                    className="px-2.5 py-1 bg-red-55/75 hover:bg-red-100 text-red-650 font-bold rounded-lg border border-red-150 flex items-center gap-1 transition-all text-[10.5px]"
+                    title="Eliminar Sede"
+                  >
+                    🗑️ Eliminar
+                  </button>
+                </div>
               </div>
             ))}
         </div>
@@ -259,6 +471,7 @@ export default function ClientSupplierManager({
                   <th className="py-3 px-5">Documento de Identidad</th>
                   <th className="py-3 px-5">Dirección Fiscal / Contacto</th>
                   <th className="py-3 px-5">Correo Electrónico</th>
+                  <th className="py-3 px-5 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -279,6 +492,26 @@ export default function ClientSupplierManager({
                       <td className="py-3 px-5 font-mono font-extrabold text-slate-700">{c.tipo_documento}: {c.numero_documento}</td>
                       <td className="py-3 px-5 text-slate-500">{c.direccion || 'No especificada'}</td>
                       <td className="py-3 px-5 text-slate-500 font-mono">{c.email || '—'}</td>
+                      <td className="py-3 px-5 text-right whitespace-nowrap">
+                        <div className="flex justify-end gap-1.5 font-sans">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditClient(c)}
+                            className="p-1 px-2.5 bg-slate-50 hover:bg-slate-100 text-slate-705 hover:text-blue-650 rounded border border-slate-200 transition-all font-semibold text-[10.5px]"
+                            title="Editar Cliente"
+                          >
+                            ✏️ Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStartDeleteClient(c)}
+                            className="p-1 px-2.5 bg-red-50 hover:bg-red-100 text-red-650 hover:text-red-850 rounded border border-red-150 transition-all font-semibold text-[10.5px]"
+                            title="Eliminar Cliente"
+                          >
+                            🗑️ Eliminar
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -302,6 +535,7 @@ export default function ClientSupplierManager({
                   <th className="py-3 px-5">Dirección de Despacho</th>
                   <th className="py-3 px-5">Contacto Comercial</th>
                   <th className="py-3 px-5">Teléfono / Email</th>
+                  <th className="py-3 px-5 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -323,6 +557,26 @@ export default function ClientSupplierManager({
                       <td className="py-3 px-5 font-mono">
                         <div className="text-slate-600">{s.telefono}</div>
                         <div className="text-[10px] text-slate-400 mt-0.5">{s.email}</div>
+                      </td>
+                      <td className="py-3 px-5 text-right whitespace-nowrap">
+                        <div className="flex justify-end gap-1.5 font-sans">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditSupplier(s)}
+                            className="p-1 px-2.5 bg-slate-50 hover:bg-slate-100 text-slate-705 hover:text-blue-650 rounded border border-slate-200 transition-all font-semibold text-[10.5px]"
+                            title="Editar Proveedor"
+                          >
+                            ✏️ Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleStartDeleteSupplier(s)}
+                            className="p-1 px-2.5 bg-red-50 hover:bg-red-100 text-red-650 hover:text-red-850 rounded border border-red-150 transition-all font-semibold text-[10.5px]"
+                            title="Eliminar Proveedor"
+                          >
+                            🗑️ Eliminar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -588,6 +842,451 @@ export default function ClientSupplierManager({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR SUCURSAL */}
+      {showEditBranchModal && editingBranch && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden border border-slate-150">
+            <div className="px-5 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                  ✏️ Editar Sucursal / Establecimiento
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Autorizado y registrado bajo la supervisión de DIGEMID.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowEditBranchModal(false); setEditingBranch(null); }}
+                className="text-slate-450 hover:text-slate-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditBranch} className="p-5 space-y-4 text-xs font-sans">
+              {ebError && (
+                <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150">
+                  {ebError}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 font-sans">Nombre del Local *</label>
+                  <input
+                    type="text"
+                    required
+                    value={ebNo}
+                    onChange={(e) => setEbNo(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 font-sans">Dirección Física *</label>
+                  <input
+                    type="text"
+                    required
+                    value={ebDir}
+                    onChange={(e) => setEbDir(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-medium"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 font-sans">Ubigeo INEI *</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      required
+                      value={ebUbi}
+                      onChange={(e) => setEbUbi(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 font-sans">Ciudad *</label>
+                    <input
+                      type="text"
+                      required
+                      value={ebCiu}
+                      onChange={(e) => setEbCiu(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 font-sans">Teléfono</label>
+                  <input
+                    type="text"
+                    value={ebTel}
+                    onChange={(e) => setEbTel(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditBranchModal(false); setEditingBranch(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-705 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ELIMINAR SUCURSAL CONFIRMACIÓN */}
+      {showDeleteBranchConfirm && deletingBranch && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-150">
+            <div className="p-5 text-center space-y-4">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-red-650 font-bold text-xl">
+                ⚠️
+              </div>
+              <div className="text-xs">
+                <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-tight">¿Eliminar Establecimiento?</h3>
+                <p className="text-slate-500 text-[11px] mt-1.5 leading-relaxed">
+                  Está por dar de baja el local <strong className="text-slate-800 font-bold">{deletingBranch.nombre}</strong> ({deletingBranch.ciudad}). Esto inhabilitará el despacho en este local, afectando reportes del Kardex de Almacén.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setShowDeleteBranchConfirm(false); setDeletingBranch(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteBranch}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                >
+                  Confirmar Eliminación
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR CLIENTE */}
+      {showEditClientModal && editingClient && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden border border-slate-150">
+            <div className="px-5 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                  ✏️ Editar Datos del Cliente
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Actualizar credenciales de facturación fiscal SUNAT.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowEditClientModal(false); setEditingClient(null); }}
+                className="text-slate-450 hover:text-slate-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditClient} className="p-5 space-y-4 text-xs font-sans">
+              {ecError && (
+                <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150">
+                  {ecError}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo Doc.</label>
+                    <select
+                      value={ecDocType}
+                      disabled
+                      onChange={(e) => setEcDocType(e.target.value as any)}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg font-medium bg-slate-100"
+                    >
+                      <option value="DNI">DNI</option>
+                      <option value="RUC">RUC</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Doc. Identidad *</label>
+                    <input
+                      type="text"
+                      required
+                      value={ecDocNo}
+                      onChange={(e) => setEcDocNo(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Completo o Razón Social *</label>
+                  <input
+                    type="text"
+                    required
+                    value={ecName}
+                    onChange={(e) => setEcName(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Dirección Fiscal / Residencia</label>
+                  <input
+                    type="text"
+                    value={ecDir}
+                    onChange={(e) => setEcDir(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 text-slate-700"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Formatos de Comprobatorios Automáticos (E-mail)</label>
+                  <input
+                    type="email"
+                    value={ecEmail}
+                    onChange={(e) => setEcEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditClientModal(false); setEditingClient(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-705 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ELIMINAR CLIENTE CONFIRMACIÓN */}
+      {showDeleteClientConfirm && deletingClient && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-150">
+            <div className="p-5 text-center space-y-4">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-red-650 font-bold text-xl">
+                ⚠️
+              </div>
+              <div className="text-xs">
+                <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-tight">¿Eliminar Cliente del Directorio?</h3>
+                <p className="text-slate-500 text-[11px] mt-1.5 leading-relaxed">
+                  Está por remover al cliente <strong className="text-slate-800 font-bold">{deletingClient.nombre_razon_social}</strong> ({deletingClient.numero_documento}) del catálogo de acceso acelerado para la dispensación general de comprobantes.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setShowDeleteClientConfirm(false); setDeletingClient(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteClient}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                >
+                  Confirmar Eliminación
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR PROVEEDOR */}
+      {showEditSupplierModal && editingSupplier && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden border border-slate-150">
+            <div className="px-5 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                  ✏️ Editar Datos del Proveedor
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Droguerías farmacéuticas autorizadas por el MINSA.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowEditSupplierModal(false); setEditingSupplier(null); }}
+                className="text-slate-450 hover:text-slate-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSupplier} className="p-5 space-y-4 text-xs font-sans">
+              {esError && (
+                <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150">
+                  {esError}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Doc. Tributario</label>
+                    <input
+                      type="text"
+                      disabled
+                      value="RUC"
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg font-medium bg-slate-100 text-center"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">RUC Remitente *</label>
+                    <input
+                      type="text"
+                      required
+                      value={esRuc}
+                      onChange={(e) => setEsRuc(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Razón Social Corporativa *</label>
+                  <input
+                    type="text"
+                    required
+                    value={esSocial}
+                    onChange={(e) => setEsSocial(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Dirección de Despacho *</label>
+                  <input
+                    type="text"
+                    required
+                    value={esDir}
+                    onChange={(e) => setEsDir(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Teléfono Fijo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={esTel}
+                      onChange={(e) => setEsTel(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Electrónico</label>
+                    <input
+                      type="email"
+                      value={esEmail}
+                      onChange={(e) => setEsEmail(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Contacto / Promotor Médico</label>
+                  <input
+                    type="text"
+                    value={esContact}
+                    onChange={(e) => setEsContact(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditSupplierModal(false); setEditingSupplier(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-705 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ELIMINAR PROVEEDOR CONFIRMACIÓN */}
+      {showDeleteSupplierConfirm && deletingSupplier && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 text-slate-800">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-150">
+            <div className="p-5 text-center space-y-4">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-red-650 font-bold text-xl">
+                ⚠️
+              </div>
+              <div className="text-xs">
+                <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-tight">¿Eliminar Droguería Distribuidora?</h3>
+                <p className="text-slate-500 text-[11px] mt-1.5 leading-relaxed">
+                  Está por desvincular al proveedor corporativo <strong className="text-slate-800 font-bold">{deletingSupplier.razon_social}</strong> (RUC: <span className="font-mono">{deletingSupplier.ruc}</span>). Esto impedirá registrar nuevos lotes asociados con su firma comercial.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setShowDeleteSupplierConfirm(false); setDeletingSupplier(null); }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteSupplier}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                >
+                  Confirmar Eliminación
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
