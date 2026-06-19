@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Search, Building, User, Users, ClipboardCheck, Network, CheckCircle, RefreshCw } from 'lucide-react';
+import { Plus, Search, Building, User, Users, ClipboardCheck, Network, CheckCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Cliente, Proveedor, Sucursal } from '../types/pharmacy';
 
 interface ClientSupplierManagerProps {
@@ -99,6 +99,9 @@ export default function ClientSupplierManager({
   const [deletingSupplier, setDeletingSupplier] = useState<Proveedor | null>(null);
   const [showDeleteSupplierConfirm, setShowDeleteSupplierConfirm] = useState(false);
 
+  const [clientConflict, setClientConflict] = useState<{ local: Cliente; server: Cliente } | null>(null);
+  const [supplierConflict, setSupplierConflict] = useState<{ local: Proveedor; server: Proveedor } | null>(null);
+
   // Branch helper execution
   const handleStartEditBranch = (b: Sucursal) => {
     setEditingBranch(b);
@@ -160,24 +163,65 @@ export default function ClientSupplierManager({
     setShowEditClientModal(true);
   };
 
-  const handleSaveEditClient = (e: React.FormEvent) => {
+  const handleSaveEditClient = (e: React.FormEvent, bypassCheck: boolean = false) => {
     e.preventDefault();
     if (!ecDocNo || !ecName) {
       setEcError('Por favor complete el documento y nombre fiscal.');
       return;
     }
-    if (editingClient && onUpdateClient) {
-      onUpdateClient({
-        ...editingClient,
-        tipo_documento: ecDocType,
-        numero_documento: ecDocNo,
-        nombre_razon_social: ecName,
-        direccion: ecDir,
-        email: ecEmail
-      });
+    if (ecDocType === 'DNI' && !/^\d{8}$/.test(ecDocNo)) {
+      setEcError('El número de DNI peruano debe contener exactamente 8 dígitos numéricos.');
+      return;
+    }
+    if (ecDocType === 'RUC' && !/^(10|20)\d{9}$/.test(ecDocNo)) {
+      setEcError('El RUC peruano debe comenzar con 10 o 20 y contener exactamente 11 dígitos numéricos.');
+      return;
+    }
+    if (editingClient) {
+      if (!bypassCheck) {
+        try {
+          const raw = localStorage.getItem('erp_clients');
+          if (raw) {
+            const list = JSON.parse(raw);
+            const serverCli = list.find((c: any) => c.id === editingClient.id);
+            if (serverCli) {
+              const serverVersion = serverCli.version ?? 1;
+              const localVersion = (editingClient as any).version ?? 1;
+              if (serverVersion > localVersion) {
+                setClientConflict({
+                  local: {
+                    ...editingClient,
+                    tipo_documento: ecDocType,
+                    numero_documento: ecDocNo,
+                    nombre_razon_social: ecName,
+                    direccion: ecDir,
+                    email: ecEmail
+                  },
+                  server: serverCli
+                });
+                return;
+              }
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (onUpdateClient) {
+        const targetVersion = bypassCheck ? (clientConflict?.server?.version ?? 1) : ((editingClient as any).version ?? 1);
+        onUpdateClient({
+          ...editingClient,
+          tipo_documento: ecDocType,
+          numero_documento: ecDocNo,
+          nombre_razon_social: ecName,
+          direccion: ecDir,
+          email: ecEmail,
+          version: targetVersion
+        });
+      }
     }
     setShowEditClientModal(false);
     setEditingClient(null);
+    setClientConflict(null);
   };
 
   const handleStartDeleteClient = (c: Cliente) => {
@@ -206,29 +250,63 @@ export default function ClientSupplierManager({
     setShowEditSupplierModal(true);
   };
 
-  const handleSaveEditSupplier = (e: React.FormEvent) => {
+  const handleSaveEditSupplier = (e: React.FormEvent, bypassCheck: boolean = false) => {
     e.preventDefault();
     if (!esRuc || !esSocial || !esDir || !esTel) {
       setEsError('Por favor complete todos los campos obligatorios.');
       return;
     }
-    if (esRuc.length !== 11) {
-      setEsError('El RUC peruano debe contener exactamente 11 dígitos.');
+    if (!/^(10|20)\d{9}$/.test(esRuc)) {
+      setEsError('El RUC peruano del proveedor debe comenzar con 10 o 20 y contener exactamente 11 dígitos numéricos.');
       return;
     }
-    if (editingSupplier && onUpdateSupplier) {
-      onUpdateSupplier({
-        ...editingSupplier,
-        ruc: esRuc,
-        razon_social: esSocial,
-        direccion: esDir,
-        telefono: esTel,
-        email: esEmail,
-        contacto: esContact
-      });
+    if (editingSupplier) {
+      if (!bypassCheck) {
+        try {
+          const raw = localStorage.getItem('erp_suppliers');
+          if (raw) {
+            const list = JSON.parse(raw);
+            const serverSup = list.find((s: any) => s.id === editingSupplier.id);
+            if (serverSup) {
+              const serverVersion = serverSup.version ?? 1;
+              const localVersion = (editingSupplier as any).version ?? 1;
+              if (serverVersion > localVersion) {
+                setSupplierConflict({
+                  local: {
+                    ...editingSupplier,
+                    ruc: esRuc,
+                    razon_social: esSocial,
+                    direccion: esDir,
+                    telefono: esTel,
+                    email: esEmail,
+                    contacto: esContact
+                  },
+                  server: serverSup
+                });
+                return;
+              }
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (onUpdateSupplier) {
+        const targetVersion = bypassCheck ? (supplierConflict?.server?.version ?? 1) : ((editingSupplier as any).version ?? 1);
+        onUpdateSupplier({
+          ...editingSupplier,
+          ruc: esRuc,
+          razon_social: esSocial,
+          direccion: esDir,
+          telefono: esTel,
+          email: esEmail,
+          contacto: esContact,
+          version: targetVersion
+        });
+      }
     }
     setShowEditSupplierModal(false);
     setEditingSupplier(null);
+    setSupplierConflict(null);
   };
 
   const handleStartDeleteSupplier = (s: Proveedor) => {
@@ -310,6 +388,14 @@ export default function ClientSupplierManager({
         setFormError('Por favor complete el documento y nombre completo.');
         return;
       }
+      if (cDocType === 'DNI' && !/^\d{8}$/.test(cDocNo)) {
+        setFormError('El número de DNI peruano debe contener exactamente 8 dígitos numéricos.');
+        return;
+      }
+      if (cDocType === 'RUC' && !/^(10|20)\d{9}$/.test(cDocNo)) {
+        setFormError('El RUC peruano debe comenzar con 10 o 20 y contener exactamente 11 dígitos numéricos.');
+        return;
+      }
       onAddClient({
         tipo_documento: cDocType,
         numero_documento: cDocNo,
@@ -326,8 +412,8 @@ export default function ClientSupplierManager({
         setFormError('Complete los datos obligatorios del proveedor corporativo.');
         return;
       }
-      if (sRuc.length !== 11 || !sRuc.startsWith('20') && !sRuc.startsWith('10')) {
-        setFormError('El RUC peruano de herencia jurídica debe comenzar por 10 o 20 y contener exactamente 11 dígitos.');
+      if (!/^(10|20)\d{9}$/.test(sRuc)) {
+        setFormError('El RUC peruano del proveedor debe comenzar con 10 o 20 y contener exactamente 11 dígitos numéricos.');
         return;
       }
       onAddSupplier({
@@ -1008,7 +1094,96 @@ export default function ClientSupplierManager({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditClient} className="p-5 space-y-4 text-xs font-sans">
+            {clientConflict && (
+              <div className="p-5 text-xs font-sans space-y-4">
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3.5">
+                  <div className="flex gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-xs uppercase tracking-tight text-amber-950">⚠️ Conflicto de Concurrencia de Red</h4>
+                      <p className="mt-1 text-[11px] leading-relaxed">
+                        Este cliente fue actualizado por otro operador (<strong>{clientConflict.server.last_updated_by || 'Administrador (Facturación)'}</strong>) mientras usted modificaba sus datos.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs col-span-3 text-[11px]">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200">
+                        <th className="p-2 font-black text-slate-600 uppercase tracking-wider">Campo</th>
+                        <th className="p-2 font-black text-amber-700 bg-amber-50/50 uppercase tracking-wider">Tu Propuesta</th>
+                        <th className="p-2 font-black text-blue-700 bg-blue-50/50 uppercase tracking-wider">Código de Red</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Nombre / R. Social</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{clientConflict.local.nombre_razon_social}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{clientConflict.server.nombre_razon_social}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Doc. Identidad</td>
+                        <td className="p-2 font-neutral text-amber-900 bg-amber-50/20">{clientConflict.local.tipo_documento} - {clientConflict.local.numero_documento}</td>
+                        <td className="p-2 font-neutral text-blue-900 bg-blue-50/20">{clientConflict.server.tipo_documento} - {clientConflict.server.numero_documento}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Dirección</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{clientConflict.local.direccion ?? '-'}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{clientConflict.server.direccion ?? '-'}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Ficha Versión</td>
+                        <td className="p-2 font-mono text-amber-900 bg-amber-50/20">v{(clientConflict.local as any).version ?? 1}</td>
+                        <td className="p-2 font-mono text-blue-900 bg-blue-50/20">v{(clientConflict.server as any).version ?? 1}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <button
+                    type="button"
+                    onClick={(e) => handleSaveEditClient(e, true)}
+                    className="w-full text-center py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
+                  >
+                    💥 Forzar Sobrescritura en Base de Datos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEcDocType(clientConflict.server.tipo_documento);
+                      setEcDocNo(clientConflict.server.numero_documento);
+                      setEcName(clientConflict.server.nombre_razon_social);
+                      setEcDir(clientConflict.server.direccion || '');
+                      setEcEmail(clientConflict.server.email || '');
+                      setEditingClient({
+                        ...editingClient!,
+                        version: (clientConflict.server as any).version
+                      });
+                      setClientConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
+                  >
+                    🔄 Recargar y Adaptar a Versión de Red
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditClientModal(false);
+                      setEditingClient(null);
+                      setClientConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                  >
+                    Cerrar sin guardar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditClient} className={`p-5 space-y-4 text-xs font-sans ${clientConflict ? 'hidden' : ''}`}>
               {ecError && (
                 <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150">
                   {ecError}
@@ -1149,7 +1324,97 @@ export default function ClientSupplierManager({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditSupplier} className="p-5 space-y-4 text-xs font-sans">
+            {supplierConflict && (
+              <div className="p-5 text-xs font-sans space-y-4">
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3.5">
+                  <div className="flex gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-xs uppercase tracking-tight text-amber-950">⚠️ Conflicto de Concurrencia de Red</h4>
+                      <p className="mt-1 text-[11px] leading-relaxed">
+                        Este registro de proveedor fue actualizado en red por otro operador (<strong>{supplierConflict.server.last_updated_by || 'Administrador (Almacén)'}</strong>) mientras usted modificaba sus datos.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs text-[11px]">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200">
+                        <th className="p-2 font-black text-slate-600 uppercase tracking-wider">Campo</th>
+                        <th className="p-2 font-black text-amber-700 bg-amber-50/50 uppercase tracking-wider">Tu Propuesta</th>
+                        <th className="p-2 font-black text-blue-700 bg-blue-50/50 uppercase tracking-wider">Código de Red</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Razón Social</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{supplierConflict.local.razon_social}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{supplierConflict.server.razon_social}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">RUC Proveedor</td>
+                        <td className="p-2 font-mono text-amber-900 bg-amber-50/20">{supplierConflict.local.ruc}</td>
+                        <td className="p-2 font-mono text-blue-900 bg-blue-50/20">{supplierConflict.server.ruc}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Teléfono</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{supplierConflict.local.telefono}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{supplierConflict.server.telefono}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Ficha Versión</td>
+                        <td className="p-2 font-mono text-amber-900 bg-amber-50/20">v{(supplierConflict.local as any).version ?? 1}</td>
+                        <td className="p-2 font-mono text-blue-900 bg-blue-50/20">v{(supplierConflict.server as any).version ?? 1}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <button
+                    type="button"
+                    onClick={(e) => handleSaveEditSupplier(e, true)}
+                    className="w-full text-center py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
+                  >
+                    💥 Forzar Sobrescritura en Base de Datos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEsRuc(supplierConflict.server.ruc);
+                      setEsSocial(supplierConflict.server.razon_social);
+                      setEsDir(supplierConflict.server.direccion);
+                      setEsTel(supplierConflict.server.telefono);
+                      setEsEmail(supplierConflict.server.email);
+                      setEsContact(supplierConflict.server.contacto || '');
+                      setEditingSupplier({
+                        ...editingSupplier!,
+                        version: (supplierConflict.server as any).version
+                      });
+                      setSupplierConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
+                  >
+                    🔄 Recargar y Adaptar a Versión de Red
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditSupplierModal(false);
+                      setEditingSupplier(null);
+                      setSupplierConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                  >
+                    Cerrar sin guardar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditSupplier} className={`p-5 space-y-4 text-xs font-sans ${supplierConflict ? 'hidden' : ''}`}>
               {esError && (
                 <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150">
                   {esError}

@@ -559,8 +559,8 @@ export default function POSSystem({
       } else {
         // New client validation for Factura
         const docNum = newClientDocNum.trim();
-        if (docNum.length !== 11 || isNaN(Number(docNum))) {
-          setErrorPOSMessage('Para emitir Factura, el RUC del cliente debe tener exactamente 11 dígitos numéricos.');
+        if (!/^(10|20)\d{9}$/.test(docNum)) {
+          setErrorPOSMessage('Para emitir Factura, el RUC del cliente debe comenzar con 10 o 20 y tener exactamente 11 dígitos numéricos.');
           return;
         }
         if (!newClientName.trim()) {
@@ -593,12 +593,12 @@ export default function POSSystem({
       // Boleta check: Optional client registering
       if (clientSearchType === 'new' && newClientDocNum.trim()) {
         const docNum = newClientDocNum.trim();
-        if (newClientDocType === 'DNI' && docNum.length !== 8) {
-          setErrorPOSMessage('El DNI ingresado del cliente debe tener exactamente 8 dígitos.');
+        if (newClientDocType === 'DNI' && !/^\d{8}$/.test(docNum)) {
+          setErrorPOSMessage('El DNI ingresado del cliente debe tener exactamente 8 dígitos numéricos.');
           return;
         }
-        if (newClientDocType === 'RUC' && docNum.length !== 11) {
-          setErrorPOSMessage('El RUC ingresado del cliente debe tener exactamente 11 dígitos.');
+        if (newClientDocType === 'RUC' && !/^(10|20)\d{9}$/.test(docNum)) {
+          setErrorPOSMessage('El RUC ingresado del cliente debe comenzar con 10 o 20 y tener exactamente 11 dígitos numéricos.');
           return;
         }
         if (!newClientName.trim()) {
@@ -646,6 +646,23 @@ export default function POSSystem({
     if (cart.length === 0) {
       setErrorPOSMessage('El carrito de ventas se encuentra vacío.');
       return;
+    }
+
+    // Millisecond Transaction Concurrency check: Anti-Stock Negativo
+    try {
+      const dbLotsStr = localStorage.getItem('erp_lots');
+      if (dbLotsStr) {
+        const dbLots = JSON.parse(dbLotsStr) as Lote[];
+        for (const item of cart) {
+          const freshLot = dbLots.find(l => l.id === item.lote.id);
+          if (!freshLot || freshLot.stock < item.cantidad) {
+            setErrorPOSMessage(`[CONCURRENCIA] Bloqueo de stock negativo: El lote "${item.lote.numero_lote}" del medicamento "${item.producto.nombre}" ya no posee stock suficiente en el servidor (Stock disponible: ${freshLot ? freshLot.stock : 0}, Requerido: ${item.cantidad}). Operación rechazada.`);
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Error verifying thread stock", err);
     }
 
     let clientObj = clients.find(c => c.id === selectedClientId);

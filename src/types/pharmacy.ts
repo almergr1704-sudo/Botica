@@ -20,6 +20,7 @@ export interface Producto {
   requiere_receta: boolean;
   precio_sugerido: number;
   activo?: boolean;
+  estado_registro?: 'activo' | 'inactivo' | 'anulado' | 'eliminado_logico';
 }
 
 export interface Lote {
@@ -32,6 +33,7 @@ export interface Lote {
   stock_inicial: number;
   precio_compra: number;
   precio_venta: number;
+  estado_registro?: 'activo' | 'inactivo' | 'anulado' | 'eliminado_logico';
 }
 
 export interface Cliente {
@@ -42,6 +44,7 @@ export interface Cliente {
   direccion?: string;
   email?: string;
   es_socio?: boolean; // True if the client is a registered Socio (preferential tariff)
+  estado_registro?: 'activo' | 'inactivo' | 'anulado' | 'eliminado_logico';
 }
 
 export interface Proveedor {
@@ -52,6 +55,7 @@ export interface Proveedor {
   telefono: string;
   email: string;
   contacto?: string;
+  estado_registro?: 'activo' | 'inactivo' | 'anulado' | 'eliminado_logico';
 }
 
 export interface Usuario {
@@ -63,6 +67,7 @@ export interface Usuario {
   activo: boolean;
   requiere_cambio_password?: boolean;
   password?: string;
+  estado_registro?: 'activo' | 'inactivo' | 'anulado' | 'eliminado_logico';
 }
 
 export interface Venta {
@@ -82,6 +87,7 @@ export interface Venta {
   id_venta_referencia?: string; // links Credit Notes to the original sale
   motivo_anulacion?: string; // description of why the Credit Note was issued
   estado?: 'Valido' | 'Anulado'; // status flag
+  estado_registro?: 'activo' | 'inactivo' | 'anulado' | 'eliminado_logico';
 }
 
 export interface DetalleVenta {

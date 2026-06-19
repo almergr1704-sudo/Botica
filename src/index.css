@@ -25,9 +25,15 @@ html.dark, .dark {
 }
 
 /* Card layout & modular containers override */
-.dark .bg-white:not(button):not(input):not(select):not(span):not(a):not(.keep-white) {
+.dark .bg-white:not(input):not(select):not(.keep-white) {
   background-color: #111827 !important; /* Tailwind gray-900 / dark card bg */
   border-color: #1f2937 !important; /* Tailwind gray-800 */
+}
+
+/* Safety color rule for elements explicitly forced to keep white background in dark mode */
+.dark .keep-white,
+.dark .keep-white * {
+  color: #0f172a !important;
 }
 
 /* Semi-transparent white containers adaptation */
@@ -120,20 +126,20 @@ html.dark, .dark {
 .dark .text-slate-800,
 .dark .text-slate-750,
 .dark .text-slate-700 {
-  color: #f3f4f6 !important; /* bright grey/white for pristine readability */
+  color: #f9fafb !important; /* pristine/purest white/gray */
 }
 
 .dark .text-slate-600,
 .dark .text-slate-500 {
-  color: #9ca3af !important; /* muted gray for sub-titles and labels */
+  color: #e5e7eb !important; /* soft light grey for sub-titles and labels */
 }
 
 .dark .text-slate-400 {
-  color: #6b7280 !important;
+  color: #cbd5e1 !important; /* readable medium-light slate grey */
 }
 
 .dark .text-slate-300 {
-  color: #4b5563 !important;
+  color: #9ca3af !important; /* muted gray for minor elements/borders */
 }
 
 /* Uniform standard alerts and labels with semantic tints */

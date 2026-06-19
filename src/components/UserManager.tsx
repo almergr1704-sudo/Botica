@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, UserPlus, Key, Shield, Check, X, AlertOctagon, 
-  RefreshCw, Eye, EyeOff, Lock, Landmark, FolderGit, Layout, FileTerminal, ArrowRight
+  RefreshCw, Eye, EyeOff, Lock, Landmark, FolderGit, Layout, FileTerminal, ArrowRight, AlertTriangle
 } from 'lucide-react';
 import { Usuario, Sucursal } from '../types/pharmacy';
 
@@ -68,6 +68,7 @@ export default function UserManager({
   const [editRole, setEditRole] = useState<'Administrador' | 'FarmaceuticoRegente' | 'Almacenero' | 'Cajero'>('Cajero');
   const [editBranchId, setEditBranchId] = useState('');
   const [editError, setEditError] = useState('');
+  const [concurrencyConflict, setConcurrencyConflict] = useState<{ local: Usuario; server: Usuario } | null>(null);
 
   // Delete Confirm States
   const [deletingUser, setDeletingUser] = useState<Usuario | null>(null);
@@ -146,7 +147,7 @@ export default function UserManager({
     setShowEditModal(true);
   };
 
-  const handleSaveEditUser = (e: React.FormEvent) => {
+  const handleSaveEditUser = (e: React.FormEvent, bypassCheck: boolean = false) => {
     e.preventDefault();
     setEditError('');
 
@@ -164,18 +165,51 @@ export default function UserManager({
       }
     }
 
-    if (editingUser && onUpdateUser) {
-      onUpdateUser({
-        ...editingUser,
-        nombre: editFullName.trim(),
-        username: editUsername.toLowerCase().trim(),
-        rol: editRole,
-        id_sucursal: editBranchId
-      });
+    if (editingUser) {
+      if (!bypassCheck) {
+        try {
+          const raw = localStorage.getItem('erp_users');
+          if (raw) {
+            const list = JSON.parse(raw);
+            const serverUser = list.find((u: any) => u.id === editingUser.id);
+            if (serverUser) {
+              const serverVersion = serverUser.version ?? 1;
+              const localVersion = (editingUser as any).version ?? 1;
+              if (serverVersion > localVersion) {
+                // simultaneous update detected
+                setConcurrencyConflict({
+                  local: {
+                    ...editingUser,
+                    nombre: editFullName.trim(),
+                    username: editUsername.toLowerCase().trim(),
+                    rol: editRole,
+                    id_sucursal: editBranchId
+                  },
+                  server: serverUser
+                });
+                return;
+              }
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (onUpdateUser) {
+        const targetVersion = bypassCheck ? (concurrencyConflict?.server?.version ?? 1) : ((editingUser as any).version ?? 1);
+        onUpdateUser({
+          ...editingUser,
+          nombre: editFullName.trim(),
+          username: editUsername.toLowerCase().trim(),
+          rol: editRole,
+          id_sucursal: editBranchId,
+          version: targetVersion
+        });
+      }
     }
 
     setShowEditModal(false);
     setEditingUser(null);
+    setConcurrencyConflict(null);
   };
 
   // Delete actions
@@ -661,83 +695,172 @@ export default function UserManager({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditUser} className="p-5 space-y-4 text-xs font-sans">
-              {editError && (
-                <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150 flex items-center gap-2">
-                  <AlertOctagon className="w-4 h-4 shrink-0" />
-                  <span>{editError}</span>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Completo y DNI</label>
-                  <input
-                    type="text"
-                    required
-                    value={editFullName}
-                    onChange={(e) => setEditFullName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-slate-50"
-                  />
+            {concurrencyConflict ? (
+              <div className="p-5 text-xs font-sans space-y-4">
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3.5">
+                  <div className="flex gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-xs uppercase tracking-tight text-amber-950">⚠️ Conflicto de Concurrencia de Red</h4>
+                      <p className="mt-1 text-[11px] leading-relaxed">
+                        Este perfil de personal fue actualizado en la base de datos por el usuario <strong>{concurrencyConflict.server.last_updated_by || 'Personal de SUNAT (Administración)'}</strong> mientras usted lo editaba.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre de Usuario (Username)</label>
-                  <input
-                    type="text"
-                    required
-                    value={editUsername}
-                    onChange={(e) => setEditUsername(e.target.value.replace(/\s+/g, ''))}
-                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-mono bg-slate-50"
-                  />
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
+                  <table className="w-full text-left border-collapse text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200">
+                        <th className="p-2 font-black text-slate-600 uppercase tracking-wider">Propiedad</th>
+                        <th className="p-2 font-black text-amber-700 bg-amber-50/50 uppercase tracking-wider">Tu Propuesta</th>
+                        <th className="p-2 font-black text-blue-700 bg-blue-50/50 uppercase tracking-wider">Código de Red</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Nombre completo</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{concurrencyConflict.local.nombre}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{concurrencyConflict.server.nombre}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Username</td>
+                        <td className="p-2 font-mono text-amber-900 bg-amber-50/20">{concurrencyConflict.local.username}</td>
+                        <td className="p-2 font-mono text-blue-900 bg-blue-50/20">{concurrencyConflict.server.username}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Rol</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{concurrencyConflict.local.rol}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{concurrencyConflict.server.rol}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Ficha Versión</td>
+                        <td className="p-2 font-mono text-amber-900 bg-amber-50/20">v{(concurrencyConflict.local as any).version ?? 1}</td>
+                        <td className="p-2 font-mono text-blue-900 bg-blue-50/20">v{(concurrencyConflict.server as any).version ?? 1}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rol / Cargo del Personal</label>
-                  <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value as any)}
-                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-white"
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <button
+                    type="button"
+                    onClick={(e) => handleSaveEditUser(e, true)}
+                    className="w-full text-center py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
                   >
-                    <option value="Administrador">Administrador</option>
-                    <option value="FarmaceuticoRegente">Químico Farmacéutico</option>
-                    <option value="Almacenero">Almacenero</option>
-                    <option value="Cajero">Cajero</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sede / Establecimiento de Operación</label>
-                  <select
-                    value={editBranchId}
-                    onChange={(e) => setEditBranchId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-white"
+                    💥 Forzar Sobrescritura en Base de Datos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Discard edits but load new ones in inputs so user can merge/tune
+                      setEditFullName(concurrencyConflict.server.nombre);
+                      setEditUsername(concurrencyConflict.server.username);
+                      setEditRole(concurrencyConflict.server.rol as any);
+                      setEditBranchId(concurrencyConflict.server.id_sucursal);
+                      setEditingUser({
+                        ...editingUser!,
+                        version: (concurrencyConflict.server as any).version
+                      });
+                      setConcurrencyConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
                   >
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.nombre} ({b.ciudad})
-                      </option>
-                    ))}
-                  </select>
+                    🔄 Descartar locales y Adaptar datos de Red
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingUser(null);
+                      setConcurrencyConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                  >
+                    Cerrar sin guardar
+                  </button>
                 </div>
               </div>
+            ) : (
+              <form onSubmit={handleSaveEditUser} className="p-5 space-y-4 text-xs font-sans">
+                {editError && (
+                  <div className="bg-red-50 text-red-750 p-2.5 rounded-lg border border-red-150 flex items-center gap-2">
+                    <AlertOctagon className="w-4 h-4 shrink-0" />
+                    <span>{editError}</span>
+                  </div>
+                )}
 
-              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setShowEditModal(false); setEditingUser(null); }}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all"
-                >
-                  Guardar Cambios
-                </button>
-              </div>
-            </form>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Completo y DNI</label>
+                    <input
+                      type="text"
+                      required
+                      value={editFullName}
+                      onChange={(e) => setEditFullName(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-slate-50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre de Usuario (Username)</label>
+                    <input
+                      type="text"
+                      required
+                      value={editUsername}
+                      onChange={(e) => setEditUsername(e.target.value.replace(/\s+/g, ''))}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-mono bg-slate-50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rol / Cargo del Personal</label>
+                    <select
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value as any)}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-white"
+                    >
+                      <option value="Administrador">Administrador</option>
+                      <option value="FarmaceuticoRegente">Químico Farmacéutico</option>
+                      <option value="Almacenero">Almacenero</option>
+                      <option value="Cajero">Cajero</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sede / Establecimiento de Operación</label>
+                    <select
+                      value={editBranchId}
+                      onChange={(e) => setEditBranchId(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-205 rounded-lg focus:ring-1 focus:ring-indigo-505 font-medium bg-white"
+                    >
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.nombre} ({b.ciudad})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowEditModal(false); setEditingUser(null); }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all"
+                  >
+                    Guardar Cambios
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

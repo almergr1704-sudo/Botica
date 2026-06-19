@@ -22,6 +22,7 @@ import SunatAuditoriaDashboard from './components/SunatAuditoriaDashboard';
 import UserManager from './components/UserManager';
 import SalesHistory from './components/SalesHistory';
 import ForcePasswordChange from './components/ForcePasswordChange';
+import { simulateExternalWrite } from './utils/concurrencyHelper';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'overview' | 'pos' | 'products' | 'lots' | 'contacts' | 'architecture' | 'kardex' | 'sunat_control' | 'users' | 'sales_history'>('overview');
@@ -49,6 +50,10 @@ export default function App() {
 
   // Selected User Session (Simulated)
   const [currentUser, setCurrentUser] = useState<Usuario>(INITIAL_USUARIOS[0]);
+
+  // Concurrency and Multi-user Simulation Engine States
+  const [concurrencySimEnabled, setConcurrencySimEnabled] = useState(true);
+  const [simToasts, setSimToasts] = useState<{ id: string; message: string; type: string }[]>([]);
 
   // Synchronize with LocalStorage
   useEffect(() => {
@@ -115,6 +120,76 @@ export default function App() {
       localStorage.setItem('erp_users', JSON.stringify(INITIAL_USUARIOS));
     }
   }, []);
+
+  // Sync state dynamically when storage changes or custom sync triggers
+  useEffect(() => {
+    const handleSync = () => {
+      const localBranches = localStorage.getItem('erp_branches');
+      const localProducts = localStorage.getItem('erp_products');
+      const localLots = localStorage.getItem('erp_lots');
+      const localClients = localStorage.getItem('erp_clients');
+      const localSuppliers = localStorage.getItem('erp_suppliers');
+      const localSales = localStorage.getItem('erp_sales');
+      const localSalesDetails = localStorage.getItem('erp_sales_details');
+      const localUsers = localStorage.getItem('erp_users');
+
+      if (localBranches) setBranches(JSON.parse(localBranches));
+      if (localProducts) setProducts(JSON.parse(localProducts));
+      if (localLots) setLots(JSON.parse(localLots));
+      if (localClients) setClients(JSON.parse(localClients));
+      if (localSuppliers) setSuppliers(JSON.parse(localSuppliers));
+      if (localSales) setSales(JSON.parse(localSales));
+      if (localSalesDetails) setSalesDetails(JSON.parse(localSalesDetails));
+      if (localUsers) {
+        const parsedUsers = JSON.parse(localUsers);
+        setUsers(parsedUsers);
+        const currentExists = parsedUsers.find((u: Usuario) => u.id === currentUser.id);
+        if (currentExists) {
+          setCurrentUser(currentExists);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('sync_erp_data', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('sync_erp_data', handleSync);
+    };
+  }, [currentUser]);
+
+  // Background Multi-User Red Network Simulation Loop (Prompts Concurrency Events)
+  useEffect(() => {
+    if (!concurrencySimEnabled) return;
+
+    const interval = setInterval(() => {
+      const res = simulateExternalWrite();
+      if (res) {
+        const toastId = `toast-${Date.now()}`;
+        const newToast = { id: toastId, message: res.message, type: res.type };
+        setSimToasts(prev => [newToast, ...prev].slice(0, 4)); // keep last 4 toasts
+        
+        // Auto-dismiss after 7 seconds
+        setTimeout(() => {
+          setSimToasts(prev => prev.filter(t => t.id !== toastId));
+        }, 7000);
+      }
+    }, 18000); // Trigger a concurrent simulation event every 18 seconds
+
+    return () => clearInterval(interval);
+  }, [concurrencySimEnabled]);
+
+  const triggerManualSimulation = () => {
+    const res = simulateExternalWrite();
+    if (res) {
+      const toastId = `toast-${Date.now()}`;
+      const newToast = { id: toastId, message: res.message, type: res.type };
+      setSimToasts(prev => [newToast, ...prev].slice(0, 4));
+      setTimeout(() => {
+        setSimToasts(prev => prev.filter(t => t.id !== toastId));
+      }, 7000);
+    }
+  };
 
   // Theme support & sidebar sync hooks
   useEffect(() => {
@@ -274,14 +349,28 @@ export default function App() {
   };
 
   const handleUpdateLot = (updatedLot: Lote) => {
-    const updated = lots.map(l => l.id === updatedLot.id ? updatedLot : l);
+    const currentVersion = (updatedLot as any).version ?? 1;
+    const withVersion = {
+      ...updatedLot,
+      version: currentVersion + 1,
+      last_updated_by: currentUser?.nombre || 'Personal del Sistema',
+      last_updated_at: new Date().toISOString()
+    };
+    const updated = lots.map(l => l.id === updatedLot.id ? withVersion : l);
     setLots(updated);
     localStorage.setItem('erp_lots', JSON.stringify(updated));
     logAction('LOTES_ALMACEN', 'ALTERACION_STOCK', `Lote [${updatedLot.numero_lote}] modificado en almacén (Stock actual: ${updatedLot.stock}, PV: S/ ${updatedLot.precio_venta.toFixed(2)}).`);
   };
 
   const handleUpdateProduct = (updatedProd: Producto) => {
-    const updated = products.map(p => p.id === updatedProd.id ? updatedProd : p);
+    const currentVersion = (updatedProd as any).version ?? 1;
+    const withVersion = {
+      ...updatedProd,
+      version: currentVersion + 1,
+      last_updated_by: currentUser?.nombre || 'Personal del Sistema',
+      last_updated_at: new Date().toISOString()
+    };
+    const updated = products.map(p => p.id === updatedProd.id ? withVersion : p);
     setProducts(updated);
     localStorage.setItem('erp_products', JSON.stringify(updated));
     logAction('PRODUCTOS', 'OTRO', `Datos de producto [${updatedProd.nombre}] actualizados en catálogo.`);
@@ -291,24 +380,23 @@ export default function App() {
     const prod = products.find(p => p.id === prodId);
     if (!prod) return;
 
-    const hasLots = lots.some(l => l.id_producto === prodId);
+    const hasLots = lots.some(l => l.id_producto === prodId && l.estado_registro !== 'eliminado_logico');
     const hasSales = salesDetails.some(sd => sd.id_producto === prodId);
 
+    // ALWAYS Soft Delete
+    const updated = products.map(p => p.id === prodId ? { ...p, activo: false, estado_registro: 'eliminado_logico' as const } : p);
+    setProducts(updated);
+    localStorage.setItem('erp_products', JSON.stringify(updated));
+    logAction('PRODUCTOS', 'ACCION_ELIMINAR', `Borrado lógico aplicado al producto: [${prod.nombre}] due to security directive.`);
+    
     if (hasLots || hasSales) {
-      // PROHIBITED HARD DELETE -> Soft Delete (Logical Deletion)
-      const updated = products.map(p => p.id === prodId ? { ...p, activo: false } : p);
-      setProducts(updated);
-      localStorage.setItem('erp_products', JSON.stringify(updated));
-      logAction('PRODUCTOS', 'ACCION_ELIMINAR', `Borrado lógico aplicado al producto: [${prod.nombre}] debido a historial operativo.`);
-      alert(`[DIRECTIVA DE CONTROL DE DATOS]
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA]
 El producto "${prod.nombre}" cuenta con historial operativo (lotes o registros de ventas).
-En cumplimiento con las normas de inactividad de datos, se ha procedido con un Borrado Lógico (Soft Delete).
-El producto ha sido inactivado para futuras operaciones de caja, manteniendo su integridad histórica.`);
+En cumplimiento con las normas, se ha procedido con un Borrado Lógico (Soft Delete).
+El producto ha sido inactivado para futuras operaciones preservando su integridad histórica.`);
     } else {
-      const updated = products.filter(p => p.id !== prodId);
-      setProducts(updated);
-      localStorage.setItem('erp_products', JSON.stringify(updated));
-      logAction('PRODUCTOS', 'ACCION_ELIMINAR', `Producto sin historial eliminado físicamente: ${prod.nombre}.`);
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA]
+El producto "${prod.nombre}" ha sido movido a la papelera lógica de DIGEMID/SUNAT.`);
     }
   };
 
@@ -323,24 +411,23 @@ El producto ha sido inactivado para futuras operaciones de caja, manteniendo su 
     const branch = branches.find(b => b.id === branchId);
     if (!branch) return;
 
-    const hasSales = sales.some(s => s.id_sucursal === branchId);
-    const hasLots = lots.some(l => l.id_sucursal === branchId);
-
-    if (hasSales || hasLots) {
-      alert(`[RESTRICCIÓN FOREIGN KEY RESTRICT]
-Abrupto interceptado. No se puede eliminar el establecimiento "${branch.nombre}" porque cuenta con registros dependientes activos (ventas tributarias o lotes asignados).
-Por favor, reasigne los lotes y preserve el historial antes de proceder.`);
-      return;
-    }
-
-    const updated = branches.filter(b => b.id !== branchId);
+    // ALWAYS Soft Delete
+    const updated = branches.map(b => b.id === branchId ? { ...b, estado_registro: 'eliminado_logico' as const } : b);
     setBranches(updated);
     localStorage.setItem('erp_branches', JSON.stringify(updated));
-    logAction('SUCURSALES', 'ACCION_ELIMINAR', `Sede sucursal eliminada: ${branch.nombre}.`);
+    logAction('SUCURSALES', 'ACCION_ELIMINAR', `Baja de establecimiento (Soft Delete): ${branch.nombre}.`);
+    alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA] El establecimiento "${branch.nombre}" ha sido dado de baja lógica en el padrón tributario de SUNAT.`);
   };
 
   const handleUpdateClient = (updatedClient: Cliente) => {
-    const updated = clients.map(c => c.id === updatedClient.id ? updatedClient : c);
+    const currentVersion = (updatedClient as any).version ?? 1;
+    const withVersion = {
+      ...updatedClient,
+      version: currentVersion + 1,
+      last_updated_by: currentUser?.nombre || 'Personal del Sistema',
+      last_updated_at: new Date().toISOString()
+    };
+    const updated = clients.map(c => c.id === updatedClient.id ? withVersion : c);
     setClients(updated);
     localStorage.setItem('erp_clients', JSON.stringify(updated));
     logAction('CLIENTES', 'OTRO', `Cliente fiscal [${updatedClient.nombre_razon_social}] modificado en padrón.`);
@@ -356,21 +443,32 @@ Por favor, reasigne los lotes y preserve el historial antes de proceder.`);
     }
 
     const hasSales = sales.some(s => s.id_cliente === clientId);
-    if (hasSales) {
-      alert(`[RESTRICCIÓN FOREIGN KEY RESTRICT]
-No se puede eliminar el cliente "${client.nombre_razon_social}" porque cuenta con comprobantes de pago asociados (Boletas o Facturas).
-Se debe mantener el padrón contable.`);
-      return;
-    }
 
-    const updated = clients.filter(c => c.id !== clientId);
+    // ALWAYS Soft Delete
+    const updated = clients.map(c => c.id === clientId ? { ...c, estado_registro: 'eliminado_logico' as const } : c);
     setClients(updated);
     localStorage.setItem('erp_clients', JSON.stringify(updated));
-    logAction('CLIENTES', 'ACCION_ELIMINAR', `Cliente removido del padrón: ${client.nombre_razon_social}.`);
+    logAction('CLIENTES', 'ACCION_ELIMINAR', `Baja de cliente (Soft Delete): ${client.nombre_razon_social}.`);
+    
+    if (hasSales) {
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA]
+El cliente "${client.nombre_razon_social}" cuenta con comprobantes de pago asociados (Boletas o Facturas).
+En cumplimiento con las normas tributarias de la SUNAT, se ha procedido con un Borrado Lógico (Soft Delete).
+El registro se inactivó de listados operativos pero permanece auditable.`);
+    } else {
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA] El cliente "${client.nombre_razon_social}" ha sido dado de baja lógicamente en el padrón del sistema.`);
+    }
   };
 
   const handleUpdateSupplier = (updatedSupplier: Proveedor) => {
-    const updated = suppliers.map(s => s.id === updatedSupplier.id ? updatedSupplier : s);
+    const currentVersion = (updatedSupplier as any).version ?? 1;
+    const withVersion = {
+      ...updatedSupplier,
+      version: currentVersion + 1,
+      last_updated_by: currentUser?.nombre || 'Personal del Sistema',
+      last_updated_at: new Date().toISOString()
+    };
+    const updated = suppliers.map(s => s.id === updatedSupplier.id ? withVersion : s);
     setSuppliers(updated);
     localStorage.setItem('erp_suppliers', JSON.stringify(updated));
     logAction('PROVEEDORES', 'OTRO', `Distribuidor/Laboratorio [${updatedSupplier.razon_social}] modificado en el padrón.`);
@@ -381,25 +479,35 @@ Se debe mantener el padrón contable.`);
     if (!supplier) return;
 
     const hasLots = lots.some(l => l.id_proveedor === supplierId);
-    if (hasLots) {
-      alert(`[RESTRICCIÓN FOREIGN KEY RESTRICT]
-Operación denegada. No se puede eliminar al proveedor "${supplier.razon_social}" porque existen lotes ingresados bajo su distribución y Kardex de compras activo.`);
-      return;
-    }
 
-    const updated = suppliers.filter(s => s.id !== supplierId);
+    // ALWAYS Soft Delete
+    const updated = suppliers.map(s => s.id === supplierId ? { ...s, estado_registro: 'eliminado_logico' as const } : s);
     setSuppliers(updated);
     localStorage.setItem('erp_suppliers', JSON.stringify(updated));
-    logAction('PROVEEDORES', 'ACCION_ELIMINAR', `Proveedor desestimado: ${supplier.razon_social}.`);
+    logAction('PROVEEDORES', 'ACCION_ELIMINAR', `Baja de proveedor (Soft Delete): ${supplier.razon_social}.`);
+    
+    if (hasLots) {
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA]
+Operación completada lógicamente. Dado que el proveedor "${supplier.razon_social}" posee lotes ingresados en el Kardex de compras, se aplica un Borrado Lógico de conservación.`);
+    } else {
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA] El proveedor "${supplier.razon_social}" ha sido dado de baja lógicamente.`);
+    }
   };
 
   const handleUpdateUser = (updatedUser: Usuario) => {
-    const updated = users.map(u => u.id === updatedUser.id ? updatedUser : u);
+    const currentVersion = (updatedUser as any).version ?? 1;
+    const withVersion = {
+      ...updatedUser,
+      version: currentVersion + 1,
+      last_updated_by: currentUser?.nombre || 'Personal del Sistema',
+      last_updated_at: new Date().toISOString()
+    };
+    const updated = users.map(u => u.id === updatedUser.id ? withVersion : u);
     setUsers(updated);
     localStorage.setItem('erp_users', JSON.stringify(updated));
     logAction('USUARIOS', 'OTRO', `Ficha laboral para [${updatedUser.username}] modificada.`);
     if (currentUser && currentUser.id === updatedUser.id) {
-      setCurrentUser(updatedUser);
+      setCurrentUser(withVersion);
     }
   };
 
@@ -413,21 +521,20 @@ Operación denegada. No se puede eliminar al proveedor "${supplier.razon_social}
     }
 
     const hasSales = sales.some(s => s.id_usuario === userId);
+
+    // ALWAYS Soft Delete
+    const updated = users.map(u => u.id === userId ? { ...u, activo: false, estado_registro: 'eliminado_logico' as const } : u);
+    setUsers(updated);
+    localStorage.setItem('erp_users', JSON.stringify(updated));
+    logAction('USUARIOS', 'ACCION_ELIMINAR', `Baja de empleado laboral (Soft Delete): ${user.username}.`);
+    
     if (hasSales) {
-      // PROHIBITED HARD DELETE -> Soft Delete (Logical Deletion)
-      const updated = users.map(u => u.id === userId ? { ...u, activo: false } : u);
-      setUsers(updated);
-      localStorage.setItem('erp_users', JSON.stringify(updated));
-      logAction('USUARIOS', 'ACCION_ELIMINAR', `Borrado lógico aplicado al usuario: [${user.username}] debido a firma de auditoría en ventas.`);
-      alert(`[DIRECTIVA DE CONTROL DE DATOS]
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA]
 El usuario "${user.username}" cuenta con firma operativa en comprobantes SUNAT y flujos de caja.
 En cumplimiento con las normas, se ha procedido con un Borrado Lógico (Soft Delete).
 Sus credenciales de acceso se han desactivado pero sus trazas de auditoría fiscal quedan guardadas.`);
     } else {
-      const updated = users.filter(u => u.id !== userId);
-      setUsers(updated);
-      localStorage.setItem('erp_users', JSON.stringify(updated));
-      logAction('USUARIOS', 'ACCION_ELIMINAR', `Empleado dado de baja definitiva: ${user.username}.`);
+      alert(`[DIRECTIVA DE CONTROL DE DATOS - PAPELERA LÓGICA] El empleado "${user.username}" ha sido inactivado y dado de baja lógicamente.`);
     }
   };
 
@@ -550,6 +657,15 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
       </div>
     );
   }
+
+  // Automatic implicit SELECT filtering of soft-deleted entries per regulatory protocol
+  const activeProducts = products.filter(p => p.estado_registro !== 'eliminado_logico');
+  const activeLots = lots.filter(l => l.estado_registro !== 'eliminado_logico');
+  const activeBranches = branches.filter(b => b.estado_registro !== 'eliminado_logico');
+  const activeClients = clients.filter(c => c.estado_registro !== 'eliminado_logico');
+  const activeSuppliers = suppliers.filter(s => s.estado_registro !== 'eliminado_logico');
+  const activeUsers = users.filter(u => u.estado_registro !== 'eliminado_logico');
+  const activeSales = sales.filter(s => s.estado_registro !== 'eliminado_logico');
 
   return (
     <div className={`min-h-screen flex w-full ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'} font-sans antialiased transition-colors duration-200 overflow-x-hidden`}>
@@ -718,6 +834,72 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
         {/* 3. RENDER CENTRAL DE LOS MÓDULOS DE NEGOCIO */}
         <main className="flex-1 w-full p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto min-h-0">
           
+          {/* 🔌 CONSOLA DE SIMULACIÓN DE CONCURRENCIA MULTI-USUARIO EXTRANET */}
+          <div className="mb-6 bg-slate-900 dark:bg-slate-950 p-4 rounded-xl border border-blue-500/30 shadow-lg relative overflow-hidden text-slate-100">
+            {/* Ambient glows */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl pointer-events-none"></div>
+            <div className="absolute -bottom-8 -left-8 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none"></div>
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${concurrencySimEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                  <h3 className="text-xs font-black tracking-wider uppercase text-blue-400 font-mono">
+                    Extranet & Concurrencia Simétrica Activa
+                  </h3>
+                </div>
+                <p className="text-xs font-medium text-slate-300 max-w-2xl leading-relaxed">
+                  Para probar los controles anti-sobreescritura: abra Editar en los módulos de 
+                  <strong> Personal, Clientes</strong> o <strong>Productos</strong>, modifique un campo sin guardar, y pulse el botón 
+                  <span className="text-blue-300"> "Simular Modificación Concurrente"</span> para simular que otro cajero en red guardó cambios antes que usted. Al guardar su edición local, ¡el sistema bloqueará la sobreescritura y abrirá la conciliación!
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <label className="flex items-center gap-2 cursor-pointer bg-slate-800 hover:bg-slate-750 px-3 py-1.5 rounded-lg border border-slate-700 select-none transition-colors">
+                  <input 
+                    type="checkbox" 
+                    checked={concurrencySimEnabled} 
+                    onChange={(e) => setConcurrencySimEnabled(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 bg-slate-950 border-slate-700" 
+                  />
+                  <span className="text-[10px] font-bold uppercase font-mono tracking-tight">Auto-Simular (18s)</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={triggerManualSimulation}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-[10px] font-black uppercase tracking-wider rounded-lg shadow-md hover:shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  {/* Lightning or Sparkles icon simulation */}
+                  <span>🔌 Simular Modificación Concurrente</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Simulated Live Toasts inside the widget */}
+            {simToasts.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-850 space-y-2 animate-in fade-in duration-300">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest font-mono">Notificaciones de Escritura Externa:</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {simToasts.map((toast) => (
+                    <div 
+                      key={toast.id} 
+                      className="flex items-start gap-2 bg-slate-850 border border-indigo-500/10 p-2.5 rounded-lg text-[11px] text-slate-200 animate-in slide-in-from-top-1 duration-200"
+                    >
+                      <div className="p-1 bg-indigo-500/20 rounded text-indigo-400 shrink-0 font-mono text-[9px] font-bold uppercase">
+                        {toast.type}
+                      </div>
+                      <div className="flex-1 font-medium italic">
+                        {toast.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Alerta de conexión global discreta */}
           <div className="mb-4 flex sm:hidden items-center justify-between p-2.5 bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-lg text-[10px]">
             <span className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-300">
@@ -728,10 +910,10 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
 
           {activeTab === 'overview' && (
             <DashboardOverview
-              products={products}
-              lots={lots}
-              branches={branches}
-              sales={sales}
+              products={activeProducts}
+              lots={activeLots}
+              branches={activeBranches}
+              sales={activeSales}
               onNavigate={(tab) => {
                 if (tab === 'pos') setActiveTab('pos');
                 if (tab === 'lots') setActiveTab('lots');
@@ -745,11 +927,11 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
 
           {activeTab === 'pos' && (
             <POSSystem
-              branches={branches}
-              products={products}
-              lots={lots}
-              clients={clients}
-              users={INITIAL_USUARIOS}
+              branches={activeBranches}
+              products={activeProducts}
+              lots={activeLots}
+              clients={activeClients}
+              users={activeUsers}
               onAddSale={handleAddSale}
               onDeductStock={handleDeductStock}
               onAddClient={handleAddClient}
@@ -758,7 +940,7 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
 
           {activeTab === 'products' && (
             <ProductCatalog
-              products={products}
+              products={activeProducts}
               onAddProduct={handleAddProduct}
               onUpdateProduct={handleUpdateProduct}
               onDeleteProduct={handleDeleteProduct}
@@ -767,9 +949,9 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
 
           {activeTab === 'lots' && (
             <LotManager
-              lots={lots}
-              products={products}
-              branches={branches}
+              lots={activeLots}
+              products={activeProducts}
+              branches={activeBranches}
               onAddLot={handleAddLot}
               onDeleteLot={handleDeleteLot}
               onClearExpired={handleClearExpired}
@@ -779,9 +961,9 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
 
           {activeTab === 'contacts' && (
             <ClientSupplierManager
-              branches={branches}
-              clients={clients}
-              suppliers={suppliers}
+              branches={activeBranches}
+              clients={activeClients}
+              suppliers={activeSuppliers}
               onAddBranch={handleAddBranch}
               onAddClient={handleAddClient}
               onAddSupplier={handleAddSupplier}
@@ -796,10 +978,10 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
 
           {activeTab === 'kardex' && (
             <KardexPurchases
-              products={products}
-              lots={lots}
-              suppliers={suppliers}
-              branches={branches}
+              products={activeProducts}
+              lots={activeLots}
+              suppliers={activeSuppliers}
+              branches={activeBranches}
               onAddLot={handleAddLot}
               onRefreshLots={() => {
                 const localLots = localStorage.getItem('erp_lots');
@@ -818,8 +1000,8 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
 
           {activeTab === 'users' && (
             <UserManager
-              branches={branches}
-              users={users}
+              branches={activeBranches}
+              users={activeUsers}
               onAddUser={handleAddUser}
               onToggleUserStatus={handleToggleUserStatus}
               currentUser={currentUser}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, ShieldCheck, Check, AlertCircle, Sparkles } from 'lucide-react';
+import { Plus, Search, Filter, ShieldCheck, Check, AlertCircle, Sparkles, AlertTriangle } from 'lucide-react';
 import { Producto } from '../types/pharmacy';
 import TransactionalPagination from './TransactionalPagination';
 
@@ -58,6 +58,7 @@ export default function ProductCatalog({
   const [epActivo, setEpActivo] = useState(true);
   const [epPrice, setEpPrice] = useState(0.50);
   const [epError, setEpError] = useState('');
+  const [concurrencyConflict, setConcurrencyConflict] = useState<{ local: Producto; server: Producto } | null>(null);
 
   // Delete Product states
   const [deletingProduct, setDeletingProduct] = useState<Producto | null>(null);
@@ -81,7 +82,7 @@ export default function ProductCatalog({
     setShowEditModal(true);
   };
 
-  const handleSaveEditProduct = (e: React.FormEvent) => {
+  const handleSaveEditProduct = (e: React.FormEvent, bypassCheck: boolean = false) => {
     e.preventDefault();
     if (!epName || !epBarcode || !epActive || !epLab || !epSanReg || !epCategory) {
       setEpError('Por favor complete todos los campos obligatorios (*).');
@@ -94,25 +95,65 @@ export default function ProductCatalog({
       return;
     }
 
-    if (editingProduct && onUpdateProduct) {
-      onUpdateProduct({
-        ...editingProduct,
-        codigo_barras: epBarcode,
-        nombre: epName,
-        principio_activo: epActive,
-        concentracion: epConcentration || 'No especificada',
-        presentacion: epPresentation || 'Caja',
-        laboratorio: epLab,
-        registro_sanitario: epSanReg.toUpperCase(),
-        categoria: epCategory,
-        requiere_receta: epRecipe,
-        activo: epActivo,
-        precio_sugerido: Number(epPrice)
-      });
+    if (editingProduct) {
+      if (!bypassCheck) {
+        try {
+          const raw = localStorage.getItem('erp_products');
+          if (raw) {
+            const list = JSON.parse(raw);
+            const serverProd = list.find((p: any) => p.id === editingProduct.id);
+            if (serverProd) {
+              const serverVersion = serverProd.version ?? 1;
+              const localVersion = (editingProduct as any).version ?? 1;
+              if (serverVersion > localVersion) {
+                // simultaneous update detected
+                setConcurrencyConflict({
+                  local: {
+                    ...editingProduct,
+                    codigo_barras: epBarcode,
+                    nombre: epName,
+                    principio_activo: epActive,
+                    concentracion: epConcentration || 'No especificada',
+                    presentacion: epPresentation || 'Caja',
+                    laboratorio: epLab,
+                    registro_sanitario: epSanReg.toUpperCase(),
+                    categoria: epCategory,
+                    requiere_receta: epRecipe,
+                    activo: epActivo,
+                    precio_sugerido: Number(epPrice)
+                  },
+                  server: serverProd
+                });
+                return;
+              }
+            }
+          }
+        } catch (err) {}
+      }
+
+      if (onUpdateProduct) {
+        const targetVersion = bypassCheck ? (concurrencyConflict?.server?.version ?? 1) : ((editingProduct as any).version ?? 1);
+        onUpdateProduct({
+          ...editingProduct,
+          codigo_barras: epBarcode,
+          nombre: epName,
+          principio_activo: epActive,
+          concentracion: epConcentration || 'No especificada',
+          presentacion: epPresentation || 'Caja',
+          laboratorio: epLab,
+          registro_sanitario: epSanReg.toUpperCase(),
+          categoria: epCategory,
+          requiere_receta: epRecipe,
+          activo: epActivo,
+          precio_sugerido: Number(epPrice),
+          version: targetVersion
+        });
+      }
     }
 
     setShowEditModal(false);
     setEditingProduct(null);
+    setConcurrencyConflict(null);
   };
 
   // Handlers for delete workflow
@@ -575,7 +616,102 @@ export default function ProductCatalog({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditProduct} className="p-6 space-y-4 text-xs font-sans">
+            {concurrencyConflict && (
+              <div className="p-6 text-xs font-sans space-y-4">
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3.5">
+                  <div className="flex gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-xs uppercase tracking-tight text-amber-950">⚠️ Conflicto de Concurrencia de Red</h4>
+                      <p className="mt-1 text-[11px] leading-relaxed">
+                        Este registro de medicamento fue editado y guardado en red por un colega (<strong>{concurrencyConflict.server.last_updated_by || 'Administrador (Almacén Central)'}</strong>) mientras usted modificaba esta ficha técnica.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
+                  <table className="w-full text-left border-collapse text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200">
+                        <th className="p-2 font-black text-slate-600 uppercase tracking-wider">Propiedad</th>
+                        <th className="p-2 font-black text-amber-700 bg-amber-50/50 uppercase tracking-wider">Tu Propuesta</th>
+                        <th className="p-2 font-black text-blue-700 bg-blue-50/50 uppercase tracking-wider">Código de Red</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Nombre Comercial</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{concurrencyConflict.local.nombre}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{concurrencyConflict.server.nombre}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Principio Activo</td>
+                        <td className="p-2 font-semibold text-amber-900 bg-amber-50/20">{concurrencyConflict.local.principio_activo}</td>
+                        <td className="p-2 font-semibold text-blue-900 bg-blue-50/20">{concurrencyConflict.server.principio_activo}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Precio Sugerido</td>
+                        <td className="p-2 font-mono text-amber-900 bg-amber-50/20">S/ {concurrencyConflict.local.precio_sugerido.toFixed(2)}</td>
+                        <td className="p-2 font-mono text-blue-900 bg-blue-50/20">S/ {concurrencyConflict.server.precio_sugerido.toFixed(2)}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2 font-bold text-slate-500">Sede Versión</td>
+                        <td className="p-2 font-mono text-amber-900 bg-amber-50/20">v{(concurrencyConflict.local as any).version ?? 1}</td>
+                        <td className="p-2 font-mono text-blue-900 bg-blue-50/20">v{(concurrencyConflict.server as any).version ?? 1}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-3 border-t border-slate-150 space-y-2">
+                  <button
+                    type="button"
+                    onClick={(e) => handleSaveEditProduct(e, true)}
+                    className="w-full text-center py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-850 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
+                  >
+                    💥 Forzar Sobrescritura en Servidor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEpName(concurrencyConflict.server.nombre);
+                      setEpBarcode(concurrencyConflict.server.codigo_barras);
+                      setEpActive(concurrencyConflict.server.principio_activo);
+                      setEpConcentration(concurrencyConflict.server.concentracion);
+                      setEpPresentation(concurrencyConflict.server.presentacion);
+                      setEpLab(concurrencyConflict.server.laboratorio);
+                      setEpSanReg(concurrencyConflict.server.registro_sanitario);
+                      setEpCategory(concurrencyConflict.server.categoria);
+                      setEpRecipe(concurrencyConflict.server.requiere_receta);
+                      setEpActivo(concurrencyConflict.server.activo);
+                      setEpPrice(concurrencyConflict.server.precio_sugerido);
+                      setEditingProduct({
+                        ...editingProduct!,
+                        version: (concurrencyConflict.server as any).version
+                      });
+                      setConcurrencyConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold uppercase tracking-wider rounded-lg transition-all shadow-xs cursor-pointer"
+                  >
+                    🔄 Recargar y Adaptar a Versión de Red
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingProduct(null);
+                      setConcurrencyConflict(null);
+                    }}
+                    className="w-full text-center py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                  >
+                    Cancelar y Cerrar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditProduct} className={`p-6 space-y-4 text-xs font-sans ${concurrencyConflict ? 'hidden' : ''}`}>
               {epError && (
                 <div className="bg-red-50 text-red-750 p-3 rounded-lg flex items-center gap-2 border border-red-150">
                   <AlertCircle className="w-4 h-4 shrink-0" />

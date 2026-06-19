@@ -5,7 +5,7 @@ import {
   TrendingUp, HelpCircle, FileText, Settings, Trash2, Edit3, 
   Plus, History, Laptop, ShieldAlert, BadgeInfo, Play, ArrowDownRight, ArrowUpRight
 } from 'lucide-react';
-import { Producto, Lote, Sucursal, Venta, Cliente, Auditoria } from '../types/pharmacy';
+import { Producto, Lote, Sucursal, Venta, Cliente, Auditoria, Usuario, Proveedor } from '../types/pharmacy';
 
 interface SunatAuditoriaDashboardProps {
   products: Producto[];
@@ -27,10 +27,114 @@ export default function SunatAuditoriaDashboard({
   onDeleteProduct
 }: SunatAuditoriaDashboardProps) {
   // Navigation inside this tab
-  const [subTab, setSubTab] = useState<'sunat_xml' | 'gerencia_dash' | 'seguridad_audit'>('gerencia_dash');
+  const [subTab, setSubTab] = useState<'sunat_xml' | 'gerencia_dash' | 'seguridad_audit' | 'papelera_logica'>('gerencia_dash');
 
   // Audit Logs State
   const [auditLogs, setAuditLogs] = useState<Auditoria[]>([]);
+
+  // Deleted entities for the Papelera Logica view
+  const [deletedProducts, setDeletedProducts] = useState<Producto[]>([]);
+  const [deletedClients, setDeletedClients] = useState<Cliente[]>([]);
+  const [deletedSuppliers, setDeletedSuppliers] = useState<any[]>([]);
+  const [deletedUsers, setDeletedUsers] = useState<Usuario[]>([]);
+
+  const loadDeletedEntities = () => {
+    try {
+      const prodStr = localStorage.getItem('erp_products');
+      if (prodStr) {
+        const parsed = JSON.parse(prodStr) as Producto[];
+        setDeletedProducts(parsed.filter(p => p.estado_registro === 'eliminado_logico' || p.activo === false));
+      } else {
+        setDeletedProducts([]);
+      }
+      
+      const cliStr = localStorage.getItem('erp_clients');
+      if (cliStr) {
+        const parsed = JSON.parse(cliStr) as Cliente[];
+        setDeletedClients(parsed.filter(c => c.estado_registro === 'eliminado_logico'));
+      } else {
+        setDeletedClients([]);
+      }
+
+      const supStr = localStorage.getItem('erp_suppliers');
+      if (supStr) {
+        const parsed = JSON.parse(supStr) as any[];
+        setDeletedSuppliers(parsed.filter(s => s.estado_registro === 'eliminado_logico'));
+      } else {
+        setDeletedSuppliers([]);
+      }
+
+      const usrStr = localStorage.getItem('erp_users');
+      if (usrStr) {
+        const parsed = JSON.parse(usrStr) as Usuario[];
+        setDeletedUsers(parsed.filter(u => u.estado_registro === 'eliminado_logico' || u.activo === false));
+      } else {
+        setDeletedUsers([]);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRestoreProduct = (id: string) => {
+    try {
+      const prodStr = localStorage.getItem('erp_products');
+      if (prodStr) {
+        const parsed = JSON.parse(prodStr) as Producto[];
+        const updated = parsed.map(p => p.id === id ? { ...p, estado_registro: 'activo' as const, activo: true } : p);
+        localStorage.setItem('erp_products', JSON.stringify(updated));
+        addAuditLog('OTRO', 'PRODUCTOS', `Restauración de producto de catálogo desde Papelera Lógica DIGEMID: ID [${id}]`);
+        window.dispatchEvent(new Event('sync_erp_data'));
+        loadDeletedEntities();
+        alert('Medicamento restaurado y reactivado correctamente para ventas y almacén.');
+      }
+    } catch {}
+  };
+
+  const handleRestoreClient = (id: string) => {
+    try {
+      const cliStr = localStorage.getItem('erp_clients');
+      if (cliStr) {
+        const parsed = JSON.parse(cliStr) as Cliente[];
+        const updated = parsed.map(c => c.id === id ? { ...c, estado_registro: 'activo' as const } : c);
+        localStorage.setItem('erp_clients', JSON.stringify(updated));
+        addAuditLog('OTRO', 'CLIENTES', `Restauración de cliente fiscal desde Papelera Lógica SUNAT: ID [${id}]`);
+        window.dispatchEvent(new Event('sync_erp_data'));
+        loadDeletedEntities();
+        alert('Cliente fiscal reincorporado correctamente al padrón acelerado.');
+      }
+    } catch {}
+  };
+
+  const handleRestoreSupplier = (id: string) => {
+    try {
+      const supStr = localStorage.getItem('erp_suppliers');
+      if (supStr) {
+        const parsed = JSON.parse(supStr) as any[];
+        const updated = parsed.map(s => s.id === id ? { ...s, estado_registro: 'activo' as const } : s);
+        localStorage.setItem('erp_suppliers', JSON.stringify(updated));
+        addAuditLog('OTRO', 'PROVEEDORES', `Restauración de proveedor desde Papelera Lógica: ID [${id}]`);
+        window.dispatchEvent(new Event('sync_erp_data'));
+        loadDeletedEntities();
+        alert('Proveedor/Laboratorio restaurado correctamente para órdenes de compra.');
+      }
+    } catch {}
+  };
+
+  const handleRestoreUser = (id: string) => {
+    try {
+      const usrStr = localStorage.getItem('erp_users');
+      if (usrStr) {
+        const parsed = JSON.parse(usrStr) as Usuario[];
+        const updated = parsed.map(u => u.id === id ? { ...u, estado_registro: 'activo' as const, activo: true } : u);
+        localStorage.setItem('erp_users', JSON.stringify(updated));
+        addAuditLog('OTRO', 'USUARIOS', `Restauración de personal de sesión laboral desde Papelera Lógica: ID [${id}]`);
+        window.dispatchEvent(new Event('sync_erp_data'));
+        loadDeletedEntities();
+        alert('Personal laboral habilitado de nuevo con credenciales activas.');
+      }
+    } catch {}
+  };
 
   // SUNAT state
   const [selectedSaleId, setSelectedSaleId] = useState<string>('');
@@ -660,6 +764,15 @@ ORDER BY l.fecha_vencimiento ASC;`
           >
             <Terminal className="w-4 h-4 text-xs" />
             Control de Auditoría
+          </button>
+          <button
+            onClick={() => { setSubTab('papelera_logica'); loadDeletedEntities(); }}
+            className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all flex items-center gap-1.5 ${
+              subTab === 'papelera_logica' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Trash2 className="w-4 h-4 text-xs" />
+            Papelera Lógica DIGEMID
           </button>
         </div>
       </div>
@@ -1291,9 +1404,216 @@ ORDER BY l.fecha_vencimiento ASC;`
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
 
+      {/* SUBTAB 4: PAPELERA LOGICA DIGEMID & SUNAT AUDITORIA */}
+      {subTab === 'papelera_logica' && (
+        <div className="space-y-6">
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex gap-3 text-xs leading-relaxed shadow-xs">
+            <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-extrabold uppercase block mb-1">Directiva de Conservación Histórica y Auditoría Gubernamental</span>
+              De acuerdo con las regulaciones de la <strong className="font-extrabold">DIGEMID</strong> y la <strong className="font-extrabold">SUNAT</strong>, está terminantemente prohibido eliminar de forma física (HARD DELETE) cualquier registro que posea historial de compras, ventas o flujos fiscales. Los registros en esta sección han sido desactivados lógicamente (Soft Delete), preservando los metadatos para auditorías forenses y posibilitando su restauración manual inmediata.
+            </div>
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            {/* Medicamentos */}
+            <div className="bg-white border border-slate-150 rounded-xl shadow-xs overflow-hidden flex flex-col">
+              <div className="bg-slate-50 border-b border-slate-100 p-4 font-bold text-slate-700 flex justify-between items-center text-xs">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <Sparkles className="w-4 h-4 text-rose-500" />
+                  Medicamentos en Papelera Lógica
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-bold">
+                  {deletedProducts.length} Ítems
+                </span>
+              </div>
+              <div className="p-4 flex-1 overflow-y-auto max-h-[320px] text-xs">
+                {deletedProducts.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400">No hay medicamentos dados de baja.</div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="text-[10px] uppercase text-slate-405 font-bold border-b border-slate-100">
+                        <th className="pb-2 font-semibold">Medicamento</th>
+                        <th className="pb-2 font-semibold">R.S. DIGEMID</th>
+                        <th className="pb-2 text-right font-semibold">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {deletedProducts.map(p => (
+                        <tr key={p.id} className="hover:bg-slate-50/60">
+                          <td className="py-2.5">
+                            <span className="font-bold text-slate-800 block text-[13px]">{p.nombre}</span>
+                            <span className="text-[10px] text-slate-450">{p.principio_activo} • {p.presentacion}</span>
+                          </td>
+                          <td className="py-2.5 font-mono text-[11px] text-slate-500">{p.registro_sanitario}</td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={() => handleRestoreProduct(p.id)}
+                              className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2.5 py-1 rounded transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Reactivar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Clientes */}
+            <div className="bg-white border border-slate-150 rounded-xl shadow-xs overflow-hidden flex flex-col">
+              <div className="bg-slate-50 border-b border-slate-100 p-4 font-bold text-slate-700 flex justify-between items-center text-xs">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <Users className="w-4 h-4 text-blue-500" />
+                  Clientes Fiscales en Papelera Lógica
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-bold">
+                  {deletedClients.length} Padrón
+                </span>
+              </div>
+              <div className="p-4 flex-1 overflow-y-auto max-h-[320px] text-xs">
+                {deletedClients.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400">No hay clientes dados de baja en el padrón.</div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="text-[10px] uppercase text-slate-405 font-bold border-b border-slate-100">
+                        <th className="pb-2 font-semibold">Razón Social / Nombre</th>
+                        <th className="pb-2 font-semibold">Documento</th>
+                        <th className="pb-2 text-right font-semibold">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {deletedClients.map(c => (
+                        <tr key={c.id} className="hover:bg-slate-50/60">
+                          <td className="py-2.5">
+                            <span className="font-bold text-slate-800 block text-[13px]">{c.nombre_razon_social}</span>
+                            <span className="text-[10px] text-slate-400 block truncate max-w-[200px]" title={c.direccion}>{c.direccion || 'Sin dirección fiscal'}</span>
+                          </td>
+                          <td className="py-2.5 font-mono text-slate-600 font-bold">{c.tipo_documento}: {c.numero_documento}</td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={() => handleRestoreClient(c.id)}
+                              className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2.5 py-1 rounded transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Reactivar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Proveedores */}
+            <div className="bg-white border border-slate-150 rounded-xl shadow-xs overflow-hidden flex flex-col">
+              <div className="bg-slate-50 border-b border-slate-100 p-4 font-bold text-slate-700 flex justify-between items-center text-xs">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <Laptop className="w-4 h-4 text-emerald-500" />
+                  Proveedores y Laboratorios Bloqueados
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-bold">
+                  {deletedSuppliers.length} Distribución
+                </span>
+              </div>
+              <div className="p-4 flex-1 overflow-y-auto max-h-[320px] text-xs">
+                {deletedSuppliers.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400">No hay laboratorios o proveedores inactivos.</div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="text-[10px] uppercase text-slate-405 font-bold border-b border-slate-100">
+                        <th className="pb-2 font-semibold">Laboratorio / Proveedor</th>
+                        <th className="pb-2 font-semibold">RUC</th>
+                        <th className="pb-2 text-right font-semibold">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {deletedSuppliers.map(s => (
+                        <tr key={s.id} className="hover:bg-slate-50/60">
+                          <td className="py-2.5">
+                            <span className="font-bold text-slate-800 block text-[13px]">{s.razon_social}</span>
+                            <span className="text-[10px] text-slate-400 block truncate max-w-[200px]" title={s.email}>{s.email}</span>
+                          </td>
+                          <td className="py-2.5 font-mono text-slate-600 font-bold">{s.ruc}</td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={() => handleRestoreSupplier(s.id)}
+                              className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2.5 py-1 rounded transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Reactivar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Personal Laboral */}
+            <div className="bg-white border border-slate-150 rounded-xl shadow-xs overflow-hidden flex flex-col">
+              <div className="bg-slate-50 border-b border-slate-100 p-4 font-bold text-slate-700 flex justify-between items-center text-xs">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <Key className="w-4 h-4 text-purple-500" />
+                  Personal Laboral Dado de Baja Auditable
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-bold">
+                  {deletedUsers.length} Fichas
+                </span>
+              </div>
+              <div className="p-4 flex-1 overflow-y-auto max-h-[320px] text-xs">
+                {deletedUsers.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400">No hay cuentas de personal inactivas.</div>
+                ) : (
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="text-[10px] uppercase text-slate-405 font-bold border-b border-slate-100">
+                        <th className="pb-2 font-semibold">Nombre y Usuario</th>
+                        <th className="pb-2 font-semibold">Rol Asignado</th>
+                        <th className="pb-2 text-right font-semibold">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {deletedUsers.map(u => (
+                        <tr key={u.id} className="hover:bg-slate-50/60">
+                          <td className="py-2.5">
+                            <span className="font-bold text-slate-800 block text-[13px]">{u.nombre}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">@{u.username}</span>
+                          </td>
+                          <td className="py-2.5">
+                            <span className="px-2 py-0.5 font-bold rounded-full bg-slate-100 text-slate-700 text-[9px] font-mono">
+                              {u.rol}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={() => handleRestoreUser(u.id)}
+                              className="inline-flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] px-2.5 py-1 rounded transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Reactivar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+          </div>
         </div>
       )}
 
