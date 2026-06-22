@@ -402,7 +402,7 @@ export default function UserManager({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1">
                     Username *

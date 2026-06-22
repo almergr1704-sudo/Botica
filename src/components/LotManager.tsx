@@ -168,7 +168,7 @@ export default function LotManager({
   return (
     <div className="space-y-6">
       {/* Botones de Filtro e Ingreso */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-150 shadow-sm font-sans">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-sm font-sans">
         <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -177,7 +177,7 @@ export default function LotManager({
               placeholder="Buscar por lote o nombre producto..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+              className="w-full h-10 pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
             />
           </div>
 
@@ -186,7 +186,7 @@ export default function LotManager({
             <select
               value={selectedBranchFilter}
               onChange={(e) => setSelectedBranchFilter(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 appearance-none"
+              className="w-full h-10 pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 appearance-none"
             >
               <option value="">Todas las Sucursales</option>
               {branches.map(b => (
@@ -200,7 +200,7 @@ export default function LotManager({
             <select
               value={expiryStatusFilter}
               onChange={(e) => setExpiryStatusFilter(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 appearance-none"
+              className="w-full h-10 pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 appearance-none"
             >
               <option value="all">Todos los Vencimientos</option>
               <option value="expired">Solo Expirados (Crítico DIGEMID)</option>
@@ -211,10 +211,10 @@ export default function LotManager({
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full lg:w-auto">
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm shrink-0"
+            className="w-full lg:w-auto flex items-center justify-center gap-1.5 h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Ingresar Nuevo Lote

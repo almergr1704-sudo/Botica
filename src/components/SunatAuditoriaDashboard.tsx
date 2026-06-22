@@ -1233,10 +1233,10 @@ ORDER BY l.fecha_vencimiento ASC;`
               <p className="text-[11px] text-slate-400">Ejecute cambios en tiempo real abajo para registrar automáticamente las trazas correspondientes en el Ledger de Auditoría superior.</p>
 
               {/* Acción 1: Modificar Precio Venta */}
-              <form onSubmit={handleUpdatePriceSim} className="p-3 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-150 rounded-xl space-y-2.5 transition-all">
-                <span className="font-bold text-indigo-950 block text-[10.5px] uppercase">Acción A: Modificación de Precios</span>
+              <form onSubmit={handleUpdatePriceSim} className="p-4 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-150 rounded-xl space-y-3 transition-all">
+                <span className="font-bold text-indigo-950 block text-[11px] uppercase tracking-wide">Acción A: Modificación de Precios</span>
                 
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <select
                     required
                     value={selectedLotForPrice}
@@ -1245,7 +1245,7 @@ ORDER BY l.fecha_vencimiento ASC;`
                       const lot = lots.find(l => l.id === e.target.value);
                       setNewPriceInput(lot ? String(lot.precio_venta) : '');
                     }}
-                    className="w-full px-2.5 py-1.5 border border-slate-250 bg-white rounded focus:outline-none"
+                    className="w-full h-10 px-3 py-2 border border-slate-250 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-lg focus:outline-none text-xs"
                   >
                     <option value="">Seleccione Lote...</option>
                     {lots.filter(l => l.stock > 0).map(l => {
@@ -1256,20 +1256,22 @@ ORDER BY l.fecha_vencimiento ASC;`
                     })}
                   </select>
 
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      required
-                      placeholder="Nuevo PV S/"
-                      value={newPriceInput}
-                      onChange={(e) => setNewPriceInput(e.target.value)}
-                      className="flex-1 px-2.5 py-1.5 border border-slate-250 bg-white rounded focus:outline-none font-mono"
-                    />
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1 min-w-[120px]">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        placeholder="Nuevo PV S/"
+                        value={newPriceInput}
+                        onChange={(e) => setNewPriceInput(e.target.value)}
+                        className="w-full h-10 px-3 py-2 border border-slate-250 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-lg focus:outline-none font-mono text-xs"
+                      />
+                    </div>
                     <button
                       type="submit"
-                      className="px-3 bg-indigo-650 hover:bg-indigo-700 text-white rounded font-bold transition-all py-1.5 shrink-0"
+                      className="w-full sm:w-auto h-10 px-5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-lg font-bold transition-all shrink-0 flex items-center justify-center text-xs whitespace-nowrap cursor-pointer"
                     >
                       Actualizar Precio
                     </button>
@@ -1278,15 +1280,15 @@ ORDER BY l.fecha_vencimiento ASC;`
               </form>
 
               {/* Acción 2: Alteracion de Stock / Conciliación */}
-              <form onSubmit={handleUpdateStockSim} className="p-3 bg-emerald-50/50 hover:bg-emerald-50 border border-emerald-150 rounded-xl space-y-2.5 transition-all">
-                <span className="font-bold text-emerald-950 block text-[10.5px] uppercase">Acción B: Conciliación Física de Lote / Merma</span>
+              <form onSubmit={handleUpdateStockSim} className="p-4 bg-emerald-50/50 hover:bg-emerald-50 border border-emerald-150 rounded-xl space-y-3 transition-all">
+                <span className="font-bold text-emerald-950 block text-[11px] uppercase tracking-wide">Acción B: Conciliación Física de Lote / Merma</span>
                 
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <select
                     required
                     value={selectedLotForStock}
                     onChange={(e) => setSelectedLotForStock(e.target.value)}
-                    className="w-full px-2.5 py-1.5 border border-slate-250 bg-white rounded focus:outline-none"
+                    className="w-full h-10 px-3 py-2 border border-slate-250 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-lg focus:outline-none text-xs"
                   >
                     <option value="">Seleccione Lote...</option>
                     {lots.map(l => {
@@ -1297,19 +1299,19 @@ ORDER BY l.fecha_vencimiento ASC;`
                     })}
                   </select>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col sm:flex-row gap-3">
                     <input
                       type="number"
                       required
                       placeholder="Variación unids (ej: -15 o +20)"
                       value={stockDeltaInput}
                       onChange={(e) => setStockDeltaInput(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-slate-250 bg-white rounded focus:outline-none font-mono"
+                      className="flex-1 h-10 px-3 py-2 border border-slate-250 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-lg focus:outline-none font-mono text-xs"
                     />
                     <select
                       value={stockDeltaReason}
                       onChange={(e) => setStockDeltaReason(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-slate-250 bg-white rounded focus:outline-none"
+                      className="flex-1 h-10 px-3 py-2 border border-slate-250 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-lg focus:outline-none text-xs"
                     >
                       <option value="CONCILIACION_FISICA">Diferencia de Inventario</option>
                       <option value="MERMA_POR_DERRAME">Merma / Daño Físico</option>
@@ -1320,7 +1322,7 @@ ORDER BY l.fecha_vencimiento ASC;`
 
                   <button
                     type="submit"
-                    className="w-full py-1.5 bg-emerald-650 hover:bg-emerald-700 text-white rounded font-bold transition-all"
+                    className="w-full h-10 bg-emerald-650 hover:bg-emerald-700 text-white rounded-lg font-bold transition-all text-xs cursor-pointer flex items-center justify-center"
                   >
                     Alterar Stock
                   </button>
@@ -1328,15 +1330,15 @@ ORDER BY l.fecha_vencimiento ASC;`
               </form>
 
               {/* Acción 3: Eliminar Medicamento del Catálogo */}
-              <form onSubmit={handleDeleteProductSim} className="p-3 bg-red-50/50 hover:bg-red-50 border border-red-150 rounded-xl space-y-2.5 transition-all">
-                <span className="font-bold text-red-950 block text-[10.5px] uppercase">Acción C: Retirar Medicamento</span>
+              <form onSubmit={handleDeleteProductSim} className="p-4 bg-red-50/50 hover:bg-red-50 border border-red-150 rounded-xl space-y-3 transition-all">
+                <span className="font-bold text-red-950 block text-[11px] uppercase tracking-wide">Acción C: Retirar Medicamento</span>
                 
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <select
                     required
                     value={selectedProdForDelete}
                     onChange={(e) => setSelectedProdForDelete(e.target.value)}
-                    className="w-full px-2.5 py-1.5 border border-slate-250 bg-white rounded focus:outline-none"
+                    className="w-full h-10 px-3 py-2 border border-slate-250 bg-white dark:bg-slate-800 dark:border-slate-700 rounded-lg focus:outline-none text-xs"
                   >
                     <option value="">Seleccione Fila Catalogo...</option>
                     {products.map(p => (
@@ -1346,9 +1348,9 @@ ORDER BY l.fecha_vencimiento ASC;`
 
                   <button
                     type="submit"
-                    className="w-full py-1.5 bg-red-600 hover:bg-red-700 text-white rounded font-bold transition-all text-[11px] flex items-center justify-center gap-1"
+                    className="w-full h-10 bg-red-650 hover:bg-red-700 text-white rounded-lg font-bold transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                     Baja Catálogo
                   </button>
                 </div>

@@ -899,48 +899,50 @@ export default function POSSystem({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
             {activeSession ? (
-              <div className="flex flex-wrap gap-2 w-full justify-end">
+              <div className="flex flex-wrap gap-2.5 w-full justify-end items-center">
                 {/* Visual statistics of cash in hand */}
-                <div className="bg-white/80 backdrop-blur-xs border border-emerald-200 p-2 rounded-lg text-center font-mono">
-                  <span className="block text-[9.5px] text-slate-500 font-semibold">Caja Esperada</span>
-                  <span className="font-bold text-slate-900 text-sm">S/ {getExpectedCash(activeSession).toFixed(2)}</span>
+                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs border border-emerald-200 dark:border-emerald-950 p-2 rounded-lg text-center font-mono shrink-0">
+                  <span className="block text-[9.5px] text-slate-500 dark:text-slate-400 font-semibold leading-none">Caja Esperada</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm mt-1 block">S/ {getExpectedCash(activeSession).toFixed(2)}</span>
                 </div>
-                <div className="bg-white/80 backdrop-blur-xs border border-emerald-200 p-2 rounded-lg text-center font-mono">
-                  <span className="block text-[9.5px] text-slate-500 font-semibold">Ventas Turno</span>
-                  <span className="font-bold text-emerald-700 text-sm">+S/ {activeSession.ventas_acumuladas.toFixed(2)}</span>
+                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs border border-emerald-200 dark:border-emerald-950 p-2 rounded-lg text-center font-mono shrink-0">
+                  <span className="block text-[9.5px] text-slate-500 dark:text-slate-400 font-semibold leading-none">Ventas Turno</span>
+                  <span className="font-bold text-emerald-700 dark:text-emerald-450 text-xs sm:text-sm mt-1 block">+S/ {activeSession.ventas_acumuladas.toFixed(2)}</span>
                 </div>
-                <div className="bg-white/80 backdrop-blur-xs border border-emerald-200 p-2 rounded-lg text-center font-mono">
-                  <span className="block text-[9.5px] text-slate-500 font-semibold">Gastos / Caja Chica</span>
-                  <span className="font-bold text-rose-600 text-sm">
+                <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xs border border-emerald-200 dark:border-emerald-950 p-2 rounded-lg text-center font-mono shrink-0">
+                  <span className="block text-[9.5px] text-slate-500 dark:text-slate-400 font-semibold leading-none">Gastos / Chica</span>
+                  <span className="font-bold text-rose-600 dark:text-rose-400 text-xs sm:text-sm mt-1 block">
                     -S/ {activeSession.egresos_manuales.reduce((acc, curr) => acc + curr.monto, 0).toFixed(2)}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowExpenseModal(true)}
-                  className="px-3 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-[11px] transition-all flex items-center gap-1"
-                >
-                  <ArrowDownLeft className="w-3.5 h-3.5 text-rose-400" />
-                  Gasto Chica
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDeclaredCashInput(getExpectedCash(activeSession));
-                    setShowClosureModal(true);
-                  }}
-                  className="px-4 bg-rose-605 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px] transition-all flex items-center gap-1 shadow-sm"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  Cierre de Caja
-                </button>
+                <div className="flex gap-2 w-full sm:w-auto items-center mt-1 sm:mt-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowExpenseModal(true)}
+                    className="flex-1 sm:flex-initial h-10 px-3 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <ArrowDownLeft className="w-3.5 h-3.5 text-rose-400" />
+                    Gasto Chica
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeclaredCashInput(getExpectedCash(activeSession));
+                      setShowClosureModal(true);
+                    }}
+                    className="flex-1 sm:flex-initial h-10 px-4 bg-rose-605 hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600 text-white rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    Cierre de Caja
+                  </button>
+                </div>
               </div>
             ) : (
-              <form onSubmit={handleOpenCash} className="flex gap-2 w-full justify-end items-center bg-white p-2 border border-slate-200 rounded-xl shadow-xs">
-                <div className="flex items-center gap-1.5 pl-2">
-                  <span className="font-bold text-slate-700">Saldo Apertura:</span>
+              <form onSubmit={handleOpenCash} className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto sm:justify-end sm:items-center bg-white dark:bg-slate-900 p-2.5 outline outline-slate-205 dark:outline-slate-700 rounded-xl shadow-xs">
+                <div className="flex items-center justify-between sm:justify-end gap-1.5 w-full">
+                  <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">Saldo Apertura:</span>
                   <div className="relative">
                     <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">S/</span>
                     <input
@@ -949,13 +951,13 @@ export default function POSSystem({
                       min={0}
                       value={openingBalanceInput}
                       onChange={(e) => setOpeningBalanceInput(Number(e.target.value))}
-                      className="w-24 pl-7 pr-2.5 py-2 border border-slate-205 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold"
+                      className="w-28 pl-7 pr-2.5 py-2 h-10 border border-slate-205 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono font-bold text-sm"
                     />
                   </div>
                 </div>
                 <button
                   type="submit"
-                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2.5 rounded-lg text-white font-bold transition-all shadow-sm flex items-center gap-1.5"
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 h-10 px-4 rounded-lg text-white font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer text-xs shrink-0"
                 >
                   <Unlock className="w-3.5 h-3.5" />
                   Abrir Turno
@@ -1285,7 +1287,7 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
               </div>
 
               {/* CMP (Colegiatura) */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-red-900 mb-1">N° de Colegiatura (CMP) *</label>
                   <input
@@ -1373,7 +1375,7 @@ ORDER BY stock_total DESC;  -- Priorizar marcas con mayor disponibilidad`}
           <div className="space-y-4 text-xs">
             <div>
               <label className="block text-[10px] font-bold text-slate-600 mb-1">Tipo de Comprobante</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <button
                   type="button"
                   onClick={() => changeDocType('Boleta')}

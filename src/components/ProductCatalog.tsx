@@ -230,7 +230,7 @@ export default function ProductCatalog({
   return (
     <div className="space-y-6">
       {/* Encabezado y búsqueda */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-150 shadow-sm">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-sm">
         <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -239,7 +239,7 @@ export default function ProductCatalog({
               placeholder="Buscar por nombre, principio o barra..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-sans"
+              className="w-full h-10 pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-sans"
             />
           </div>
 
@@ -248,7 +248,7 @@ export default function ProductCatalog({
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-sans appearance-none"
+              className="w-full h-10 pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-sans appearance-none"
             >
               <option value="">Todas las Categorías</option>
               {categories.map(cat => (
@@ -262,7 +262,7 @@ export default function ProductCatalog({
             <select
               value={requiresRecipeFilter}
               onChange={(e) => setRequiresRecipeFilter(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-sans appearance-none"
+              className="w-full h-10 pl-9 pr-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-sans appearance-none"
             >
               <option value="all">Sustancias (Ambas)</option>
               <option value="recipe">Venta con Receta Médica</option>
@@ -273,7 +273,7 @@ export default function ProductCatalog({
 
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm shrink-0"
+          className="w-full lg:w-auto h-10 flex items-center justify-center gap-1.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           Registrar Medicamento
