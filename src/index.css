@@ -36,6 +36,19 @@ html.dark, .dark {
   color: #0f172a !important;
 }
 
+/* Bright white button adaptations in dark mode for readable text and contrast */
+.dark button.bg-white,
+.dark .bg-white button:not(.keep-white) {
+  background-color: #1f2937 !important;
+  color: #f9fafb !important;
+  border-color: #374151 !important;
+}
+.dark button.bg-white:hover,
+.dark .bg-white button:not(.keep-white):hover {
+  background-color: #374151 !important;
+  color: #ffffff !important;
+}
+
 /* Semi-transparent white containers adaptation */
 .dark .bg-white\/80 {
   background-color: rgba(17, 24, 39, 0.85) !important;

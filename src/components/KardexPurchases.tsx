@@ -1226,13 +1226,25 @@ export default function KardexPurchases({
                         return (
                           <div key={a.lot.id} className="p-3 bg-slate-50 dark:bg-slate-850/50 rounded-xl border border-slate-150 dark:border-slate-800 flex items-center justify-between gap-3 transition-colors hover:bg-slate-100/40">
                             <div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[8.5px] font-extrabold px-1 py-0.2 rounded ${
-                                  isOver ? 'bg-red-150 text-red-750 font-bold' : 'bg-amber-100 text-amber-700'
-                                }`}>
-                                  {isOver ? 'YA VENCIDO 🚨' : `${a.daysLeft} DÍAS RESTANTES`}
-                                </span>
-                                <span className="text-[9px] font-semibold text-slate-400 font-mono">Lote: {a.lot.numero_lote}</span>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                {a.daysLeft < 0 ? (
+                                  <span className="bg-[#DC2626] text-[#FFFFFF] border border-[#B91C1C] text-[12px] font-bold px-2.5 py-1 rounded-lg">
+                                    🔴 Vencido ({Math.abs(a.daysLeft)}d)
+                                  </span>
+                                ) : a.daysLeft < 15 ? (
+                                  <span className="bg-[#DC2626] text-[#FFFFFF] border border-[#B91C1C] text-[12px] font-bold px-2.5 py-1 rounded-lg">
+                                    🔴 Vence en {a.daysLeft} días
+                                  </span>
+                                ) : a.daysLeft <= 90 ? (
+                                  <span className="bg-[#EA580C] text-[#FFFFFF] border border-[#C2410C] text-[12px] font-bold px-2.5 py-1 rounded-lg">
+                                    🟠 Vence en {a.daysLeft} días
+                                  </span>
+                                ) : (
+                                  <span className="bg-[#15803D] text-[#FFFFFF] border border-[#166534] text-[12px] font-bold px-2.5 py-1 rounded-lg">
+                                    🟢 Vigente ({a.daysLeft} días)
+                                  </span>
+                                )}
+                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 font-mono">Lote: {a.lot.numero_lote}</span>
                               </div>
                               <span className="font-bold text-slate-800 dark:text-slate-200 text-xs block mt-1">{a.product?.nombre}</span>
                               <span className="text-[10px] text-indigo-650 dark:text-indigo-400 block mt-0.5 font-bold">Vence: {a.lot.fecha_vencimiento}</span>

@@ -57,10 +57,39 @@ export default function LotManager({
   };
 
   const getExpirationStatus = (days: number) => {
-    if (days < 0) return { label: 'Vencido', color: 'bg-red-100 text-red-800 border-red-200', type: 'expired' };
-    if (days <= 30) return { label: 'Vence < 30 días', color: 'bg-orange-100 text-orange-850 border-orange-250', type: 'critical' };
-    if (days <= 90) return { label: 'Vence < 90 días', color: 'bg-amber-100 text-amber-800 border-amber-200', type: 'warning' };
-    return { label: 'Vigente (Ok)', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', type: 'ok' };
+    if (days < 0) {
+      return {
+        label: `🔴 Vencido (${Math.abs(days)}d)`,
+        color: 'bg-[#DC2626] text-[#FFFFFF] border-[#B91C1C] font-bold',
+        type: 'expired'
+      };
+    }
+    if (days < 15) {
+      return {
+        label: `🔴 Vence en ${days} días`,
+        color: 'bg-[#DC2626] text-[#FFFFFF] border-[#B91C1C] font-bold',
+        type: 'critical'
+      };
+    }
+    if (days <= 30) {
+      return {
+        label: `🟠 Vence en ${days} días`,
+        color: 'bg-[#EA580C] text-[#FFFFFF] border-[#C2410C] font-bold',
+        type: 'critical'
+      };
+    }
+    if (days <= 90) {
+      return {
+        label: `🟠 Vence en ${days} días`,
+        color: 'bg-[#EA580C] text-[#FFFFFF] border-[#C2410C] font-bold',
+        type: 'warning'
+      };
+    }
+    return {
+      label: `🟢 Vigente (${days} días)`,
+      color: 'bg-[#15803D] text-[#FFFFFF] border-[#166534] font-bold',
+      type: 'ok'
+    };
   };
 
   const handleCreateLot = (e: React.FormEvent) => {
@@ -291,19 +320,21 @@ export default function LotManager({
                         </td>
                         <td className="py-3 px-5 font-mono font-bold text-blue-600 truncate">{lote.numero_lote}</td>
                         <td className="py-3 px-5 overflow-hidden">
-                          <div className="flex flex-col gap-1 max-w-full">
-                            <span className="font-mono text-slate-700 font-semibold">{lote.fecha_vencimiento}</span>
-                            <span className={`inline-block text-[10px] px-2 py-0.5 rounded border font-semibold w-max truncate max-w-full ${expiryUI.color}`} title={expiryUI.label}>
-                              {expiryUI.label} {days < 0 ? `(${Math.abs(days)}d vencido)` : `(${days} d)`}
+                          <div className="flex flex-col gap-1.5 max-w-full">
+                            <span className="font-mono text-slate-700 dark:text-slate-300 font-semibold text-xs">{lote.fecha_vencimiento}</span>
+                            <span className={`inline-flex items-center text-[12px] md:text-[13px] px-3 py-1 rounded-lg border font-bold w-max shadow-3xs max-w-full truncate whitespace-nowrap leading-none ${expiryUI.color}`} title={expiryUI.label}>
+                              {expiryUI.label}
                             </span>
                           </div>
                         </td>
                         <td className="py-3 px-5">
                           <div className="flex flex-col">
-                            <span className={`font-mono text-sm font-bold ${lote.stock <= 15 ? 'text-red-650 animate-pulse font-black' : 'text-slate-800'}`}>
+                            <span className={`font-mono text-sm font-bold ${lote.stock <= 15 ? 'text-red-650 dark:text-red-400 animate-pulse font-black' : 'text-slate-800 dark:text-slate-200'}`}>
                               {lote.stock} / {lote.stock_inicial}
                             </span>
-                            <span className="text-[9px] text-slate-400">unidades restantes</span>
+                            <span className="text-[11px] md:text-[12px] text-slate-600 dark:text-slate-300 font-semibold font-sans mt-0.5">
+                              unidades restantes
+                            </span>
                           </div>
                         </td>
                         <td className="py-3 px-5 text-right font-mono">
