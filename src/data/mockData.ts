@@ -362,8 +362,9 @@ export const INITIAL_USUARIOS: Usuario[] = [
     rol: 'Administrador',
     id_sucursal: 'suc-01',
     activo: true,
-    password: 'AdminPassword123!',
-    requiere_cambio_password: false
+    password: 'admin',
+    requiere_cambio_password: true,
+    email: 'admin@sigifar.pe'
   },
   {
     id: 'usr-02',
@@ -373,7 +374,8 @@ export const INITIAL_USUARIOS: Usuario[] = [
     id_sucursal: 'suc-01',
     activo: true,
     password: 'MendozaPassword1!',
-    requiere_cambio_password: false
+    requiere_cambio_password: true,
+    email: 'regente.mendoza@sigifar.pe'
   },
   {
     id: 'usr-03',
@@ -383,7 +385,8 @@ export const INITIAL_USUARIOS: Usuario[] = [
     id_sucursal: 'suc-01',
     activo: true,
     password: 'SofiaPassword1!',
-    requiere_cambio_password: false
+    requiere_cambio_password: true,
+    email: 'cajero.sofia@sigifar.pe'
   },
   {
     id: 'usr-04',
@@ -393,6 +396,7 @@ export const INITIAL_USUARIOS: Usuario[] = [
     id_sucursal: 'suc-01',
     activo: true,
     password: 'CarlosPassword1!',
-    requiere_cambio_password: false
+    requiere_cambio_password: true,
+    email: 'almacen.carlos@sigifar.pe'
   }
 ];

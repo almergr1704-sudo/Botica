@@ -4,6 +4,7 @@ import {
   RefreshCw, Eye, EyeOff, Lock, Landmark, FolderGit, Layout, FileTerminal, ArrowRight, AlertTriangle
 } from 'lucide-react';
 import { Usuario, Sucursal } from '../types/pharmacy';
+import { hashPassword } from '../utils/security';
 
 interface UserManagerProps {
   branches: Sucursal[];
@@ -120,8 +121,10 @@ export default function UserManager({
       rol: role,
       id_sucursal: branchId,
       activo: true, // default state is Active as per standard creation
-      password: password || 'ClaveGenerica123!',
-      requiere_cambio_password: true
+      password: hashPassword(password || 'ClaveGenerica123!'),
+      requiere_cambio_password: true,
+      must_change_password: true,
+      password_changed: false
     });
 
     setFormSuccess(true);
@@ -629,6 +632,10 @@ export default function UserManager({
                                   alert('Por seguridad, no puedes eliminar tu propia cuenta activa de administrador.');
                                   return;
                                 }
+                                if (u.username.toLowerCase() === 'admin') {
+                                  alert('No se puede dar de baja o eliminar la cuenta del Administrador principal del sistema.');
+                                  return;
+                                }
                                 handleStartDeleteUser(u);
                               }}
                               className="p-1 px-2 bg-red-50 hover:bg-red-105 text-red-650 hover:text-red-850 rounded border border-red-150 transition-all text-[11px]"
@@ -643,6 +650,10 @@ export default function UserManager({
                               onClick={() => {
                                 if (isCurrentUser) {
                                   alert('Por seguridad, no puedes deshabilitarte a ti mismo.');
+                                  return;
+                                }
+                                if (u.username.toLowerCase() === 'admin') {
+                                  alert('No se puede desactivar la cuenta del Administrador principal del sistema.');
                                   return;
                                 }
                                 onToggleUserStatus(u.id);

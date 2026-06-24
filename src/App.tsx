@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ShoppingBag, Pill, CalendarClock, BookUser, Layers, ShieldCheck, ClipboardList, Users, History, ChevronLeft, ChevronRight, Menu, X, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, Pill, CalendarClock, BookUser, Layers, ShieldCheck, ClipboardList, Users, History, ChevronLeft, ChevronRight, Menu, X, Moon, Sun, LogOut, Key } from 'lucide-react';
 import { Sucursal, Producto, Lote, Cliente, Proveedor, Usuario, Venta, DetalleVenta } from './types/pharmacy';
 import { 
   INITIAL_SUCURSALES, 
@@ -22,6 +22,9 @@ import SunatAuditoriaDashboard from './components/SunatAuditoriaDashboard';
 import UserManager from './components/UserManager';
 import SalesHistory from './components/SalesHistory';
 import ForcePasswordChange from './components/ForcePasswordChange';
+import LoginScreen from './components/LoginScreen';
+import UserProfileModal from './components/UserProfileModal';
+import { logSecurityAction, hashPassword, verifyPassword, mustChangePassword, isTemporaryPassword } from './utils/security';
 import { simulateExternalWrite } from './utils/concurrencyHelper';
 
 export default function App() {
@@ -49,7 +52,8 @@ export default function App() {
   const [salesDetails, setSalesDetails] = useState<DetalleVenta[]>([]);
 
   // Selected User Session (Simulated)
-  const [currentUser, setCurrentUser] = useState<Usuario>(INITIAL_USUARIOS[0]);
+  const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Concurrency and Multi-user Simulation Engine States
   const [concurrencySimEnabled, setConcurrencySimEnabled] = useState(true);
@@ -108,16 +112,74 @@ export default function App() {
 
     if (localUsers) {
       const parsedUsers = JSON.parse(localUsers);
-      setUsers(parsedUsers);
+      // Enrich old users with missing email / require_password parameters
+      const enrichedUsers = parsedUsers.map((u: Usuario) => {
+        const matchingInitial = INITIAL_USUARIOS.find(init => init.username === u.username);
+        const isPrimaryAdmin = u.username.toLowerCase() === 'admin';
+        const hasTempPassword = (u.password === 'AdminPassword123!' || u.password === 'admin' || isTemporaryPassword(u.password || '', u.username));
+        if (matchingInitial) {
+          return {
+            ...matchingInitial,
+            ...u,
+            email: u.email || matchingInitial.email,
+            password: (u.password === 'AdminPassword123!' || u.password === 'admin') ? 'admin' : u.password,
+            requiere_cambio_password: hasTempPassword ? true : u.requiere_cambio_password,
+            must_change_password: hasTempPassword ? true : (u.must_change_password !== undefined ? u.must_change_password : u.requiere_cambio_password),
+            password_changed: hasTempPassword ? false : (u.password_changed !== undefined ? u.password_changed : !u.requiere_cambio_password),
+            activo: isPrimaryAdmin ? true : u.activo,
+            estado_registro: isPrimaryAdmin ? undefined : u.estado_registro
+          };
+        }
+        if (isPrimaryAdmin) {
+          return {
+            ...u,
+            password: (u.password === 'AdminPassword123!' || u.password === 'admin') ? 'admin' : u.password,
+            requiere_cambio_password: hasTempPassword ? true : u.requiere_cambio_password,
+            must_change_password: hasTempPassword ? true : (u.must_change_password !== undefined ? u.must_change_password : u.requiere_cambio_password),
+            password_changed: hasTempPassword ? false : (u.password_changed !== undefined ? u.password_changed : !u.requiere_cambio_password),
+            activo: true,
+            estado_registro: undefined
+          };
+        }
+        return {
+          ...u,
+          must_change_password: hasTempPassword ? true : (u.must_change_password !== undefined ? u.must_change_password : u.requiere_cambio_password),
+          password_changed: hasTempPassword ? false : (u.password_changed !== undefined ? u.password_changed : !u.requiere_cambio_password),
+        };
+      });
+
+      // Ensure that 'admin' is definitely in the list and active
+      const hasAdmin = enrichedUsers.some((u: Usuario) => u.username.toLowerCase() === 'admin');
+      if (!hasAdmin) {
+        const initialAdmin = INITIAL_USUARIOS.find(init => init.username === 'admin');
+        if (initialAdmin) {
+          enrichedUsers.unshift({
+            ...initialAdmin,
+            activo: true
+          });
+        }
+      }
+
+      setUsers(enrichedUsers);
+      localStorage.setItem('erp_users', JSON.stringify(enrichedUsers));
       // Auto-update standard logged-in user state just in case status changed
-      const currentExists = parsedUsers.find((u: Usuario) => u.id === currentUser.id);
-      if (currentExists) {
-        setCurrentUser(currentExists);
+      if (currentUser) {
+        const currentExists = enrichedUsers.find((u: Usuario) => u.id === currentUser.id);
+        if (currentExists) {
+          setCurrentUser(currentExists);
+        }
       }
     }
     else {
-      setUsers(INITIAL_USUARIOS);
-      localStorage.setItem('erp_users', JSON.stringify(INITIAL_USUARIOS));
+      // Force admin to be active in initial users list
+      const forcedInitial = INITIAL_USUARIOS.map((u: Usuario) => {
+        if (u.username.toLowerCase() === 'admin') {
+          return { ...u, activo: true, estado_registro: undefined };
+        }
+        return u;
+      });
+      setUsers(forcedInitial);
+      localStorage.setItem('erp_users', JSON.stringify(forcedInitial));
     }
   }, []);
 
@@ -143,9 +205,11 @@ export default function App() {
       if (localUsers) {
         const parsedUsers = JSON.parse(localUsers);
         setUsers(parsedUsers);
-        const currentExists = parsedUsers.find((u: Usuario) => u.id === currentUser.id);
-        if (currentExists) {
-          setCurrentUser(currentExists);
+        if (currentUser) {
+          const currentExists = parsedUsers.find((u: Usuario) => u.id === currentUser.id);
+          if (currentExists) {
+            setCurrentUser(currentExists);
+          }
         }
       }
     };
@@ -217,19 +281,32 @@ export default function App() {
 
   // Update helper functions to push changes to state and LocalStorage
   const handleAddUser = (newUser: Omit<Usuario, 'id'>) => {
-    const updated = [...users, { ...newUser, requiere_cambio_password: true, id: `usr-${Date.now()}` }];
+    const updated = [
+      ...users, 
+      { 
+        ...newUser, 
+        requiere_cambio_password: true, 
+        must_change_password: true,
+        password_changed: false,
+        id: `usr-${Date.now()}` 
+      }
+    ];
     setUsers(updated);
     localStorage.setItem('erp_users', JSON.stringify(updated));
   };
 
   const handleToggleUserStatus = (userId: string) => {
+    const targetUser = users.find(u => u.id === userId);
+    if (targetUser && targetUser.username.toLowerCase() === 'admin') {
+      alert('No se puede desactivar la cuenta del Administrador principal del sistema.');
+      return;
+    }
     const updated = users.map(u => u.id === userId ? { ...u, activo: !u.activo } : u);
     setUsers(updated);
     localStorage.setItem('erp_users', JSON.stringify(updated));
     
     // If the currently simulated user is toggled inactive, auto-rollback active session to Admin to simulate safe override
-    const targetUser = updated.find(u => u.id === userId);
-    if (targetUser && !targetUser.activo && currentUser.id === userId) {
+    if (targetUser && !targetUser.activo && currentUser && currentUser.id === userId) {
       const defaultAdmin = updated.find(u => u.rol === 'Administrador' && u.activo) || updated[0];
       setCurrentUser(defaultAdmin);
       alert(`La sesión activa para el usuario suspendido "${targetUser.username}" ha sido revocada por razones de seguridad de inicio de sesión.`);
@@ -515,6 +592,11 @@ Operación completada lógicamente. Dado que el proveedor "${supplier.razon_soci
     const user = users.find(u => u.id === userId);
     if (!user) return;
 
+    if (user.username.toLowerCase() === 'admin') {
+      alert('No se puede dar de baja o eliminar la cuenta del Administrador principal del sistema.');
+      return;
+    }
+
     if (currentUser && currentUser.id === userId) {
       alert('No puedes depurar o revocar tu propia cuenta activa de sesión.');
       return;
@@ -637,22 +719,78 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
     return true;
   });
 
-  if (currentUser && currentUser.requiere_cambio_password) {
+  const handleLogout = () => {
+    if (currentUser) {
+      logSecurityAction(currentUser.id, `${currentUser.nombre} (${currentUser.rol})`, 'Cierre de sesión finalizado completamente y redirigido al formulario de acceso.');
+    }
+    setCurrentUser(null);
+    setActiveTab('overview');
+  };
+
+  if (!currentUser) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
+        <LoginScreen 
+          users={users} 
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+            setActiveTab('overview');
+          }} 
+          darkMode={darkMode}
+        />
+      </div>
+    );
+  }
+
+  if (currentUser && mustChangePassword(currentUser)) {
+    // If the state flags are desynced, align them to enforce absolute block
+    if (!currentUser.requiere_cambio_password || !currentUser.must_change_password || currentUser.password_changed !== false) {
+      currentUser.requiere_cambio_password = true;
+      currentUser.must_change_password = true;
+      currentUser.password_changed = false;
+    }
+
     return (
       <div className={`min-h-screen flex justify-center items-center p-4 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
         <ForcePasswordChange
           currentUser={currentUser}
           onPasswordChanged={(updatedUser) => {
-            handleUpdateUser(updatedUser);
-            setActiveTab('overview');
-          }}
-          onLogout={() => {
-            const defaultUser = users.find(u => !u.requiere_cambio_password) || users[0];
-            if (defaultUser) {
-              setCurrentUser(defaultUser);
+            const password = updatedUser.password || '';
+            const WEAK_PASSWORDS = [
+              'admin', 'admin123', 'password', '12345678', 'contraseña', 
+              'sigifar', 'sigifar123', 'alfafarma', 'mendoza123', 'regente123'
+            ];
+            
+            const hasMinLength = password.length >= 8;
+            const hasUppercase = /[A-Z]/.test(password);
+            const hasLowercase = /[a-z]/.test(password);
+            const hasNumber = /[0-9]/.test(password);
+            const hasSpecial = /[^A-Za-z0-9]/.test(password);
+            const meetsAllRequirements = hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecial;
+            const isWeak = WEAK_PASSWORDS.includes(password.toLowerCase()) || password.toLowerCase().includes(updatedUser.username.toLowerCase());
+            const isReusingOld = password === 'admin' || verifyPassword(password, currentUser.password || '');
+
+            if (!password || !meetsAllRequirements || isWeak || isReusingOld) {
+              logSecurityAction(currentUser.id, `${currentUser.nombre} (${currentUser.rol})`, 'RECHAZO DE SEGURIDAD BACKEND: Intento de evadir o registrar una contraseña insegura.');
+              alert('Error de Seguridad: La nueva contraseña no cumple con los requisitos y políticas de robustez del sistema.');
+              return;
             }
+
+            const dateNow = new Date();
+            const formattedDate = dateNow.toISOString();
+            const withPasswordChanged = {
+              ...updatedUser,
+              password: hashPassword(password), // Securely hash before saving
+              fecha_cambio_password: formattedDate,
+              requiere_cambio_password: false,
+              must_change_password: false,
+              password_changed: true
+            };
+            handleUpdateUser(withPasswordChanged);
+            logSecurityAction(withPasswordChanged.id, `${withPasswordChanged.nombre} (${withPasswordChanged.rol})`, 'Cambio obligatorio de contraseña por primer inicio de sesión completado con éxito.');
             setActiveTab('overview');
           }}
+          onLogout={handleLogout}
         />
       </div>
     );
@@ -737,7 +875,34 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
         </nav>
 
         {/* Footer del Sidebar con botón de colapsar */}
-        <div className="p-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/20">
+        <div className="p-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850/20 space-y-1.5">
+          {/* Botón de Perfil / Cambiar Clave en Sidebar */}
+          <button
+            onClick={() => {
+              setIsProfileModalOpen(true);
+              setSidebarMobileOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/25 rounded-lg cursor-pointer transition-all font-bold ${
+              sidebarCollapsed ? 'justify-center' : 'text-xs'
+            }`}
+            title="Mi Perfil → Cambiar Contraseña"
+          >
+            <Key className="w-4 h-4 shrink-0 text-indigo-500" />
+            {!sidebarCollapsed && <span>Mi Perfil & Claves</span>}
+          </button>
+
+          {/* Botón de Cerrar Sesión en Sidebar */}
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center gap-3 px-3 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/25 rounded-lg cursor-pointer transition-all font-bold ${
+              sidebarCollapsed ? 'justify-center' : 'text-xs'
+            }`}
+            title="Cerrar Sesión Activa"
+          >
+            <LogOut className="w-4 h-4 shrink-0 text-rose-500" />
+            {!sidebarCollapsed && <span>Cerrar Sesión</span>}
+          </button>
+
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="hidden lg:flex w-full items-center justify-center gap-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
@@ -818,16 +983,37 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
               )}
             </button>
 
+            {/* Botón de Gestión de Claves (Mi Perfil) */}
+            <button
+              onClick={() => setIsProfileModalOpen(true)}
+              className="p-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-lg cursor-pointer transition-colors flex items-center gap-1.5"
+              title="Mi Perfil → Cambiar Contraseña"
+              id="header_change_password_btn"
+            >
+              <Key className="w-4 h-4 text-indigo-500" />
+              <span className="hidden lg:inline text-[11px] font-bold">Mis Claves</span>
+            </button>
+
             {/* Usuario Activo Badge */}
             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
               <div className="w-6 h-6 rounded bg-blue-600 text-white flex items-center justify-center font-black text-xs shrink-0 font-mono">
-                {currentUser.nombre.charAt(0)}
+                {currentUser?.nombre ? currentUser.nombre.charAt(0) : 'U'}
               </div>
               <div className="hidden md:flex flex-col text-left">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 block -mb-0.5 leading-none font-bold">{currentUser.rol}</span>
-                <span className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none">{currentUser.username}</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 block -mb-0.5 leading-none font-bold">{currentUser?.rol}</span>
+                <span className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none">{currentUser?.username}</span>
               </div>
             </div>
+
+            {/* Botón de Cerrar Sesión en Header */}
+            <button
+              onClick={handleLogout}
+              className="p-2 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/35 rounded-lg cursor-pointer transition-colors"
+              title="Cerrar Sesión Activa"
+              id="header_logout_btn"
+            >
+              <LogOut className="w-4.5 h-4.5" />
+            </button>
           </div>
         </header>
 
@@ -1069,6 +1255,29 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
           </div>
         </footer>
       </div>
+
+      {currentUser && (
+        <UserProfileModal
+          currentUser={currentUser}
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          onPasswordChanged={(updatedUser) => {
+            const dateNow = new Date();
+            const formattedDate = dateNow.toISOString();
+            const withPasswordChanged = {
+              ...updatedUser,
+              password: hashPassword(updatedUser.password || ''), // Securely hash before saving
+              fecha_cambio_password: formattedDate,
+              requiere_cambio_password: false,
+              must_change_password: false,
+              password_changed: true
+            };
+            handleUpdateUser(withPasswordChanged);
+            logSecurityAction(withPasswordChanged.id, `${withPasswordChanged.nombre} (${withPasswordChanged.rol})`, 'Cambio voluntario de contraseña realizado con éxito. Cerrando todas las sesiones por directivas de seguridad.');
+            handleLogout();
+          }}
+        />
+      )}
     </div>
   );
 }

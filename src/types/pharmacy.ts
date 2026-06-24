@@ -66,7 +66,11 @@ export interface Usuario {
   id_sucursal: string;
   activo: boolean;
   requiere_cambio_password?: boolean;
+  must_change_password?: boolean;
+  password_changed?: boolean;
   password?: string;
+  fecha_cambio_password?: string;
+  email?: string;
   estado_registro?: 'activo' | 'inactivo' | 'anulado' | 'eliminado_logico';
 }
 
