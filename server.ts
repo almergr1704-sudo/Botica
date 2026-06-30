@@ -97,14 +97,15 @@ async function findUserByUsername(username: string) {
   return matched ? { ...matched } : null;
 }
 
-// Helper to verify passwords against plain text or bcrypt hash
+// Helper to verify passwords securely via bcrypt only
 function checkPassword(entered: string, stored: string): boolean {
   if (!stored) return false;
-  if (stored.startsWith("$2a$") || stored.startsWith("$2b$")) {
+  try {
     return bcrypt.compareSync(entered, stored);
+  } catch (err) {
+    console.error("[BCRYPT ERROR] Failed to compare password:", err);
+    return false;
   }
-  // Fallback direct plain-text match for legacy or temporary initial passwords
-  return entered === stored;
 }
 
 // Helper to verify if password is weak or temporary
