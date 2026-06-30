@@ -132,63 +132,37 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
       return;
     }
 
-    // 2. Locate user in mock list
-    let user = users.find(u => u.username.toLowerCase() === cleanUsername);
-    const isPrimaryAdmin = cleanUsername === 'admin';
+    // Call actual backend API
+    fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: cleanUsername, password })
+    })
+    .then(async (res) => {
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Error de autenticación');
+      }
 
-    if (!user && isPrimaryAdmin) {
-      user = {
-        id: 'usr-01',
-        nombre: 'Administrador General',
-        username: 'admin',
-        rol: 'Administrador',
-        id_sucursal: 'suc-01',
-        activo: true,
-        password: 'admin',
-        requiere_cambio_password: true,
-        email: 'admin@sigifar.pe'
-      };
-    } else if (user && isPrimaryAdmin) {
-      user = {
-        ...user,
-        activo: true,
-        estado_registro: undefined
-      };
-    }
+      // Success! Clear failed attempts
+      localStorage.removeItem(`erp_attempts_${cleanUsername}`);
+      localStorage.removeItem(`erp_lockout_${cleanUsername}`);
 
-    if (!user) {
-      // Register general failed attempt
-      logSecurityAction('anon', 'Usuario Anónimo', `Intento fallido de inicio de sesión: El usuario "${cleanUsername}" no existe.`);
-      setLoginError('Las credenciales proporcionadas no corresponden a un colaborador activo.');
+      // Save real session token
+      localStorage.setItem('sigifar_session_token', data.token);
+
+      logSecurityAction(data.user.id, `${data.user.nombre} (${data.user.rol})`, 
+        data.user.requiere_cambio_password 
+          ? 'Inicio de sesión bajo credenciales temporales. REDIRECCIÓN MANDATORIA E INMEDIATA a cambio obligatorio de contraseña.' 
+          : `Inicio de sesión exitoso bajo rol: [${data.user.rol}].`
+      );
+
       setIsSubmitting(false);
-      return;
-    }
-
-    // 3. Check if user is active (Primary admin account is exempted from personal padrón deactivations)
-    if (!isPrimaryAdmin && (!user.activo || user.estado_registro === 'eliminado_logico')) {
-      logSecurityAction(user.id, `${user.nombre} (${user.rol})`, `Acceso denegado: El usuario "${username}" está suspendido o de baja.`);
-      setLoginError('Su cuenta se encuentra desactivada en el padrón del personal. Comuníquese con el Administrador.');
-      setIsSubmitting(false);
-      return;
-    }
-
-    // 4. Validate password
-    let isPasswordValid = verifyPassword(password, user.password || '');
-
-    // Explicit bypass to ensure initial credentials "admin" / "admin" always work and force password change
-    if (isPrimaryAdmin && password === 'admin') {
-      isPasswordValid = true;
-      user = {
-        ...user,
-        password: 'admin',
-        requiere_cambio_password: true,
-        must_change_password: true,
-        password_changed: false
-      };
-    }
-
-    if (!isPasswordValid) {
-      // Increment failed attempts
+      // Trigger parent success handler
+      onLoginSuccess(data.user);
+    })
+    .catch((err) => {
+      // Increment failed attempts and trigger lockouts on client side for enhanced UI/UX safety
       const savedAttemptsStr = localStorage.getItem(`erp_attempts_${cleanUsername}`) || '0';
       const newAttempts = parseInt(savedAttemptsStr) + 1;
       
@@ -201,44 +175,15 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
         setLockoutRemaining(policy.lockoutDurationSec);
         setLockedUsername(cleanUsername);
         
-        logSecurityAction(user.id, `${user.nombre} (${user.rol})`, `CUENTA BLOQUEADA por ${policy.lockoutDurationSec}s tras ${newAttempts} intentos fallidos de login.`);
+        logSecurityAction('anon', 'Usuario Anónimo', `CUENTA BLOQUEADA por ${policy.lockoutDurationSec}s tras ${newAttempts} intentos fallidos de login.`);
         setLoginError(`Cuenta bloqueada temporalmente por reiterados intentos fallidos. Intente de nuevo en ${policy.lockoutDurationSec} segundos.`);
       } else {
         localStorage.setItem(`erp_attempts_${cleanUsername}`, newAttempts.toString());
-        logSecurityAction(user.id, `${user.nombre} (${user.rol})`, `Intento fallido de login (${newAttempts}/${policy.maxFailedAttempts}).`);
-        setLoginError(`Credenciales incorrectas. Intento ${newAttempts} de ${policy.maxFailedAttempts}.`);
+        logSecurityAction('anon', 'Usuario Anónimo', `Intento fallido de login (${newAttempts}/${policy.maxFailedAttempts}) para usuario "${cleanUsername}".`);
+        setLoginError(`Credenciales incorrectas o inválidas. Intento ${newAttempts} de ${policy.maxFailedAttempts}.`);
       }
       setIsSubmitting(false);
-      return;
-    }
-
-    // Success! Clear failed attempts
-    localStorage.removeItem(`erp_attempts_${cleanUsername}`);
-    localStorage.removeItem(`erp_lockout_${cleanUsername}`);
-
-    // Check if password is a temporal or default one
-    const requiresChange = mustChangePassword(user) || isTemporaryPassword(password, user.username);
-    if (requiresChange) {
-      user = {
-        ...user,
-        requiere_cambio_password: true,
-        must_change_password: true,
-        password_changed: false
-      };
-      logSecurityAction(user.id, `${user.nombre} (${user.rol})`, 'Inicio de sesión bajo credenciales temporales. REDIRECCIÓN MANDATORIA E INMEDIATA a cambio obligatorio de contraseña.');
-    } else {
-      user = {
-        ...user,
-        requiere_cambio_password: false,
-        must_change_password: false,
-        password_changed: true
-      };
-      logSecurityAction(user.id, `${user.nombre} (${user.rol})`, `Inicio de sesión exitoso bajo rol: [${user.rol}].`);
-    }
-
-    // Trigger parent success handler
-    onLoginSuccess(user);
-    // Keep isSubmitting true to prevent double clicks during unmount
+    });
   };
 
   // Password Recovery Flow

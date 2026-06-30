@@ -183,6 +183,29 @@ export default function App() {
     }
   }, []);
 
+  // Restore active session on mount
+  useEffect(() => {
+    const token = localStorage.getItem('sigifar_session_token');
+    if (token) {
+      fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setCurrentUser(data.user);
+        } else {
+          // Token expired or invalid, clear it
+          localStorage.removeItem('sigifar_session_token');
+          setCurrentUser(null);
+        }
+      })
+      .catch((err) => {
+        console.error("Session verification failed:", err);
+      });
+    }
+  }, []);
+
   // Sync state dynamically when storage changes or custom sync triggers
   useEffect(() => {
     const handleSync = () => {
@@ -723,6 +746,7 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
     if (currentUser) {
       logSecurityAction(currentUser.id, `${currentUser.nombre} (${currentUser.rol})`, 'Cierre de sesión finalizado completamente y redirigido al formulario de acceso.');
     }
+    localStorage.removeItem('sigifar_session_token');
     setCurrentUser(null);
     setActiveTab('overview');
   };
@@ -754,41 +778,40 @@ Se ha retornado la cantidad vendida a sus respectivos lotes de origen.`);
       <div className={`min-h-screen flex justify-center items-center p-4 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
         <ForcePasswordChange
           currentUser={currentUser}
-          onPasswordChanged={(updatedUser) => {
-            const password = updatedUser.password || '';
-            const WEAK_PASSWORDS = [
-              'admin', 'admin123', 'password', '12345678', 'contraseña', 
-              'sigifar', 'sigifar123', 'alfafarma', 'mendoza123', 'regente123'
-            ];
-            
-            const hasMinLength = password.length >= 8;
-            const hasUppercase = /[A-Z]/.test(password);
-            const hasLowercase = /[a-z]/.test(password);
-            const hasNumber = /[0-9]/.test(password);
-            const hasSpecial = /[^A-Za-z0-9]/.test(password);
-            const meetsAllRequirements = hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecial;
-            const isWeak = WEAK_PASSWORDS.includes(password.toLowerCase()) || password.toLowerCase().includes(updatedUser.username.toLowerCase());
-            const isReusingOld = password === 'admin' || verifyPassword(password, currentUser.password || '');
-
-            if (!password || !meetsAllRequirements || isWeak || isReusingOld) {
-              logSecurityAction(currentUser.id, `${currentUser.nombre} (${currentUser.rol})`, 'RECHAZO DE SEGURIDAD BACKEND: Intento de evadir o registrar una contraseña insegura.');
-              alert('Error de Seguridad: La nueva contraseña no cumple con los requisitos y políticas de robustez del sistema.');
+          onPasswordChanged={(newPassword, currentPassword) => {
+            const token = localStorage.getItem('sigifar_session_token');
+            if (!token) {
+              alert('Error: No se ha iniciado una sesión de autenticación restringida.');
               return;
             }
 
-            const dateNow = new Date();
-            const formattedDate = dateNow.toISOString();
-            const withPasswordChanged = {
-              ...updatedUser,
-              password: hashPassword(password), // Securely hash before saving
-              fecha_cambio_password: formattedDate,
-              requiere_cambio_password: false,
-              must_change_password: false,
-              password_changed: true
-            };
-            handleUpdateUser(withPasswordChanged);
-            logSecurityAction(withPasswordChanged.id, `${withPasswordChanged.nombre} (${withPasswordChanged.rol})`, 'Cambio obligatorio de contraseña por primer inicio de sesión completado con éxito.');
-            setActiveTab('overview');
+            fetch('/api/auth/change-password', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ currentPassword, newPassword })
+            })
+            .then(async (res) => {
+              const data = await res.json();
+              if (!res.ok) {
+                throw new Error(data.message || 'Error al cambiar contraseña');
+              }
+
+              // Success! Store the new unrestricted token and updated user details
+              localStorage.setItem('sigifar_session_token', data.token);
+              
+              // Apply update to users state in React and LocalStorage
+              handleUpdateUser(data.user);
+
+              logSecurityAction(data.user.id, `${data.user.nombre} (${data.user.rol})`, 'Cambio obligatorio de contraseña por primer inicio de sesión completado con éxito.');
+              setActiveTab('overview');
+            })
+            .catch((err) => {
+              logSecurityAction(currentUser.id, `${currentUser.nombre} (${currentUser.rol})`, 'RECHAZO DE SEGURIDAD BACKEND: Intento de evadir o registrar una contraseña insegura.');
+              alert(`Error de Seguridad: ${err.message}`);
+            });
           }}
           onLogout={handleLogout}
         />

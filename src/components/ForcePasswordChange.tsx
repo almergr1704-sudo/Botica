@@ -5,7 +5,7 @@ import { verifyPassword } from '../utils/security';
 
 interface ForcePasswordChangeProps {
   currentUser: Usuario;
-  onPasswordChanged: (updatedUser: Usuario) => void;
+  onPasswordChanged: (newPassword: string, currentPassword: string) => void;
   onLogout: () => void;
 }
 
@@ -117,11 +117,7 @@ export default function ForcePasswordChange({
     }
 
     // Pass validated updated user to App.tsx
-    onPasswordChanged({
-      ...currentUser,
-      password: newPassword,
-      requiere_cambio_password: false
-    });
+    onPasswordChanged(newPassword, currentPassword);
   };
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
@@ -166,11 +162,7 @@ export default function ForcePasswordChange({
       }
 
       // If all validated, save securely
-      onPasswordChanged({
-        ...currentUser,
-        password: newPassword,
-        requiere_cambio_password: false
-      });
+      onPasswordChanged(newPassword, currentPassword);
     }
   };
 
