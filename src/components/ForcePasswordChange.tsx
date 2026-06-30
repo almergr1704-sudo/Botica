@@ -38,8 +38,8 @@ export default function ForcePasswordChange({
 
   const meetsAllRequirements = hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecial;
   const isMatch = newPassword !== '' && newPassword === confirmPassword;
-  const isCurrentPasswordCorrect = currentPassword ? verifyPassword(currentPassword, currentUser.password || '') : false;
-  const isReusingOld = newPassword !== '' && verifyPassword(newPassword, currentUser.password || '');
+  const isCurrentPasswordCorrect = currentPassword.trim() !== '';
+  const isReusingOld = newPassword !== '' && newPassword === currentPassword;
 
   // Real-time strength score calculation
   const getStrengthScore = () => {

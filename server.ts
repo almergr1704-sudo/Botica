@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { db } from "./src/db/index.ts";
-import { usuarios } from "./src/db/schema.ts";
+import { usuarios, auditorias } from "./src/db/schema.ts";
 import { eq } from "drizzle-orm";
 
 // JWT Secret Key for Session Authentication
@@ -19,7 +19,7 @@ const fallbackUsers = [
     rol: "Administrador",
     id_sucursal: "suc-01",
     activo: true,
-    password: "admin", // Accept either plaintext "admin" or bcrypt hash
+    password: bcrypt.hashSync("admin", 10),
     requiere_cambio_password: true,
     must_change_password: true,
     password_changed: false,
@@ -32,7 +32,7 @@ const fallbackUsers = [
     rol: "FarmaceuticoRegente",
     id_sucursal: "suc-01",
     activo: true,
-    password: "MendozaPassword1!",
+    password: bcrypt.hashSync("MendozaPassword1!", 10),
     requiere_cambio_password: true,
     must_change_password: true,
     password_changed: false,
@@ -45,7 +45,7 @@ const fallbackUsers = [
     rol: "Cajero",
     id_sucursal: "suc-01",
     activo: true,
-    password: "SofiaPassword1!",
+    password: bcrypt.hashSync("SofiaPassword1!", 10),
     requiere_cambio_password: true,
     must_change_password: true,
     password_changed: false,
@@ -58,7 +58,7 @@ const fallbackUsers = [
     rol: "Almacenero",
     id_sucursal: "suc-01",
     activo: true,
-    password: "CarlosPassword1!",
+    password: bcrypt.hashSync("CarlosPassword1!", 10),
     requiere_cambio_password: true,
     must_change_password: true,
     password_changed: false,
@@ -78,7 +78,7 @@ async function findUserByUsername(username: string) {
         id: dbUser.id,
         username: dbUser.username,
         nombre: dbUser.nombre,
-        rol: dbUser.rolId === 1 ? "Administrador" : dbUser.rolId === 2 ? "FarmaceuticoRegente" : dbUser.rolId === 3 ? "Cajero" : "Almacenero",
+        rol: dbUser.rolId === 1 ? "Administrador" : dbUser.rolId === 2 ? "FarmaceuticoRegente" : dbUser.rolId === 3 ? "Almacenero" : "Cajero",
         id_sucursal: dbUser.id_sucursal || "suc-01",
         activo: dbUser.activo,
         password: dbUser.password || "admin",
@@ -127,9 +127,75 @@ function isTemporaryPassword(password: string, username: string): boolean {
   return false;
 }
 
+async function seedUsersInDb() {
+  try {
+    const results = await db.select().from(usuarios).where(eq(usuarios.username, "admin")).limit(1);
+    if (!results || results.length === 0) {
+      console.log("[DATABASE SEED] Seeding default users into SQL Database...");
+      
+      await db.insert(usuarios).values({
+        username: "admin",
+        nombre: "Arq. Luis Alejandro (Admin)",
+        email: "admin@sigifar.pe",
+        rolId: 1, // Administrador
+        id_sucursal: "suc-01",
+        activo: true,
+        requiere_cambio_password: true,
+        password: bcrypt.hashSync("admin", 10),
+        estado_registro: "activo"
+      });
+
+      await db.insert(usuarios).values({
+        username: "quimico.mendoza",
+        nombre: "Dra. Patricia Mendoza Cruz (Química Regente)",
+        email: "regente.mendoza@sigifar.pe",
+        rolId: 2, // FarmaceuticoRegente
+        id_sucursal: "suc-01",
+        activo: true,
+        requiere_cambio_password: true,
+        password: bcrypt.hashSync("MendozaPassword1!", 10),
+        estado_registro: "activo"
+      });
+
+      await db.insert(usuarios).values({
+        username: "almacen.carlos",
+        nombre: "Carlos Gonzales (Almacenero / Logística)",
+        email: "almacen.carlos@sigifar.pe",
+        rolId: 3, // Almacenero
+        id_sucursal: "suc-01",
+        activo: true,
+        requiere_cambio_password: true,
+        password: bcrypt.hashSync("CarlosPassword1!", 10),
+        estado_registro: "activo"
+      });
+
+      await db.insert(usuarios).values({
+        username: "cajero.sofia",
+        nombre: "Sofía Quispe Pineda (Cajera)",
+        email: "cajero.sofia@sigifar.pe",
+        rolId: 4, // Cajero
+        id_sucursal: "suc-01",
+        activo: true,
+        requiere_cambio_password: true,
+        password: bcrypt.hashSync("SofiaPassword1!", 10),
+        estado_registro: "activo"
+      });
+
+      console.log("[DATABASE SEED] Seeding completed successfully. All users seeded with bcrypt-hashed credentials.");
+    } else {
+      console.log("[DATABASE SEED] Admin user already exists. Skipping SQL database seeding.");
+    }
+  } catch (err: any) {
+    console.warn("[DATABASE SEED WARNING] Could not seed users into SQL database. Database might be offline or initializing. Error:", err.message || err);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Run the seeding logic on start
+  await seedUsersInDb();
 
   // Body parsers
   app.use(express.json());
@@ -285,8 +351,20 @@ async function startServer() {
         .where(eq(usuarios.id, currentUserContext.id));
       databaseUpdated = true;
       console.log(`[DATABASE PASSWORD UPDATE] Success for user id=${currentUserContext.id}`);
-    } catch (err) {
-      console.warn("[DATABASE UPDATE FAILED] Cloud SQL offline. Applying update to local memory fallback registry.");
+
+      // Log successful password change to database audit
+      await db.insert(auditorias).values({
+        id_usuario: currentUserContext.id,
+        usuario_nombre: `${currentUserContext.nombre} (${currentUserContext.rol})`,
+        modulo: "USUARIOS",
+        accion: "CAMBIO_CONTRASENA",
+        detalle: `Cambio obligatorio de contraseña de primer inicio de sesión completado con éxito. IP: ${req.ip || "127.0.0.1"}`,
+        fecha: new Date(),
+        ip_dispositivo: req.ip || "127.0.0.1"
+      });
+      console.log(`[DATABASE AUDIT LOG] Recorded password change event for ${currentUserContext.username}`);
+    } catch (err: any) {
+      console.warn("[DATABASE UPDATE / AUDIT FAILED] Cloud SQL offline or unreachable. Error:", err.message || err);
     }
 
     // Update offline fallback registry to stay synchronized
