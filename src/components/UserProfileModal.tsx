@@ -133,7 +133,49 @@ export default function UserProfileModal({
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
-      setErrorMessage('Por motivos de seguridad, el envío automático del formulario mediante la tecla Enter está deshabilitado. Debe usar el botón "Actualizar Clave" de manera explícita.');
+      
+      // 1. Verify current password
+      const isCurrentCorrect = verifyPassword(currentPassword, currentUser.password || '');
+      if (!isCurrentCorrect) {
+        setErrorMessage('La contraseña actual ingresada es incorrecta.');
+        return;
+      }
+
+      // 2. Verify meets requirements
+      if (!meetsAllRequirements) {
+        setErrorMessage('La nueva contraseña no cumple con todas las directivas de seguridad corporativas.');
+        return;
+      }
+
+      // 3. Verify weak/common
+      if (WEAK_PASSWORDS.includes(newPassword.toLowerCase()) || newPassword.toLowerCase().includes(currentUser.username.toLowerCase())) {
+        setErrorMessage('La contraseña elegida es una clave común o contiene su identificador. Por seguridad, elija otra.');
+        return;
+      }
+
+      // 4. Verify identical to old
+      if (isReusingOld) {
+        setErrorMessage('No puede reutilizar su contraseña actual por políticas de alternancia cíclica.');
+        return;
+      }
+
+      // 5. Verify match
+      if (!isMatch) {
+        setErrorMessage('La confirmación no coincide exactamente con la nueva contraseña.');
+        return;
+      }
+
+      // Success! Update password
+      setSuccessMessage('Su contraseña ha sido modificada con éxito. Por seguridad, su sesión se cerrará automáticamente en 3 segundos.');
+      
+      setTimeout(() => {
+        onPasswordChanged({
+          ...currentUser,
+          password: newPassword, // Will be hashed in App.tsx
+          requiere_cambio_password: false
+        });
+        onClose();
+      }, 3000);
     }
   };
 

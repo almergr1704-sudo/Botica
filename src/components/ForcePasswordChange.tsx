@@ -126,10 +126,51 @@ export default function ForcePasswordChange({
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter') {
-      // Direct physical blockade to prevent any automatic form submit key bypass
       e.preventDefault();
       e.stopPropagation();
-      setErrorMessage('Por motivos de seguridad, el envío automático del formulario mediante la tecla Enter está deshabilitado. Debe usar el botón "Guardar Contraseña" de manera explícita.');
+      
+      // Run the complete validation logic immediately
+      if (!currentPassword) {
+        setErrorMessage('Debe ingresar su contraseña actual.');
+        return;
+      }
+
+      if (!isCurrentPasswordCorrect) {
+        setErrorMessage('La contraseña actual es incorrecta o inválida.');
+        return;
+      }
+
+      if (!newPassword) {
+        setErrorMessage('Debe ingresar una nueva contraseña.');
+        return;
+      }
+
+      if (!meetsAllRequirements) {
+        setErrorMessage('La nueva contraseña no cumple con todos los requisitos de seguridad obligatorios.');
+        return;
+      }
+
+      if (WEAK_PASSWORDS.includes(newPassword.toLowerCase()) || newPassword.toLowerCase().includes(currentUser.username.toLowerCase())) {
+        setErrorMessage('La contraseña es demasiado común o contiene su identificador de usuario. Elija una contraseña segura.');
+        return;
+      }
+
+      if (isReusingOld) {
+        setErrorMessage('No puede reutilizar su contraseña temporal o actual como la nueva contraseña.');
+        return;
+      }
+
+      if (!isMatch) {
+        setErrorMessage('La nueva contraseña y su confirmación no coinciden.');
+        return;
+      }
+
+      // If all validated, save securely
+      onPasswordChanged({
+        ...currentUser,
+        password: newPassword,
+        requiere_cambio_password: false
+      });
     }
   };
 
