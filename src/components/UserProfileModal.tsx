@@ -131,11 +131,9 @@ export default function UserProfileModal({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      const isCurrentCorrect = verifyPassword(currentPassword, currentUser.password || '');
-      if (!isCurrentCorrect || !meetsAllRequirements || !isMatch || isReusingOld) {
-        e.preventDefault();
-        setErrorMessage('Por favor, verifique y cumpla todos los requisitos de seguridad antes de procesar el formulario.');
-      }
+      e.preventDefault();
+      e.stopPropagation();
+      setErrorMessage('Por motivos de seguridad, el envío automático del formulario mediante la tecla Enter está deshabilitado. Debe usar el botón "Actualizar Clave" de manera explícita.');
     }
   };
 
@@ -176,7 +174,7 @@ export default function UserProfileModal({
         </div>
 
         {/* Body Form */}
-        <form onSubmit={handleFormSubmit} className="p-6 space-y-4">
+        <form onSubmit={(e) => e.preventDefault()} className="p-6 space-y-4">
           
           {/* Status and feedback messages */}
           {errorMessage && (
@@ -359,7 +357,8 @@ export default function UserProfileModal({
               Cancelar
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleFormSubmit}
               disabled={!meetsAllRequirements || !isMatch || isReusingOld || !currentPassword}
               className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all shadow-md disabled:opacity-50 disabled:shadow-none text-[10px] uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
             >

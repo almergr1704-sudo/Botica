@@ -39,6 +39,7 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Policy and lockout states
   const [policy, setPolicy] = useState<PasswordPolicy>(getPasswordPolicy());
@@ -113,17 +114,21 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
   // Handle standard login submit
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     setLoginError('');
 
     const cleanUsername = username.trim().toLowerCase();
     if (!cleanUsername || !password) {
       setLoginError('Por favor complete todos los campos obligatorios.');
+      setIsSubmitting(false);
       return;
     }
 
     // 1. Check if user is locked out
     if (checkUsernameLockout(cleanUsername)) {
       setLoginError(`Esta cuenta se encuentra temporalmente bloqueada por reiterados intentos fallidos. Espere ${lockoutRemaining} segundos.`);
+      setIsSubmitting(false);
       return;
     }
 
@@ -155,6 +160,7 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
       // Register general failed attempt
       logSecurityAction('anon', 'Usuario Anónimo', `Intento fallido de inicio de sesión: El usuario "${cleanUsername}" no existe.`);
       setLoginError('Las credenciales proporcionadas no corresponden a un colaborador activo.');
+      setIsSubmitting(false);
       return;
     }
 
@@ -162,6 +168,7 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
     if (!isPrimaryAdmin && (!user.activo || user.estado_registro === 'eliminado_logico')) {
       logSecurityAction(user.id, `${user.nombre} (${user.rol})`, `Acceso denegado: El usuario "${username}" está suspendido o de baja.`);
       setLoginError('Su cuenta se encuentra desactivada en el padrón del personal. Comuníquese con el Administrador.');
+      setIsSubmitting(false);
       return;
     }
 
@@ -201,6 +208,7 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
         logSecurityAction(user.id, `${user.nombre} (${user.rol})`, `Intento fallido de login (${newAttempts}/${policy.maxFailedAttempts}).`);
         setLoginError(`Credenciales incorrectas. Intento ${newAttempts} de ${policy.maxFailedAttempts}.`);
       }
+      setIsSubmitting(false);
       return;
     }
 
@@ -230,6 +238,7 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
 
     // Trigger parent success handler
     onLoginSuccess(user);
+    // Keep isSubmitting true to prevent double clicks during unmount
   };
 
   // Password Recovery Flow
@@ -407,11 +416,11 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
                   <input
                     type="text"
                     required
-                    disabled={lockoutRemaining > 0}
+                    disabled={lockoutRemaining > 0 || isSubmitting}
                     value={username}
                     onChange={(e) => handleUsernameChange(e.target.value)}
                     placeholder="Ingrese su alias de colaborador"
-                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 text-xs font-mono"
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 text-xs font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <div className="absolute left-3 top-3.5 text-slate-400">
                     <Users className="w-4 h-4" />
@@ -427,12 +436,13 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
                   </label>
                   <button
                     type="button"
+                    disabled={isSubmitting}
                     onClick={() => {
                       setIsRecovering(true);
                       setRecoveryError('');
                       setRecoveryStep(1);
                     }}
-                    className="text-[9.5px] font-bold text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-all"
+                    className="text-[9.5px] font-bold text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-all disabled:opacity-50 disabled:no-underline"
                   >
                     ¿Olvidó su clave?
                   </button>
@@ -441,19 +451,20 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
-                    disabled={lockoutRemaining > 0}
+                    disabled={lockoutRemaining > 0 || isSubmitting}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Contraseña del sistema"
-                    className="w-full pl-9 pr-10 py-2.5 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 text-xs font-mono"
+                    className="w-full pl-9 pr-10 py-2.5 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 text-xs font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <div className="absolute left-3 top-3.5 text-slate-400">
                     <Key className="w-4 h-4" />
                   </div>
                   <button
                     type="button"
+                    disabled={isSubmitting}
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                    className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-50"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -463,11 +474,20 @@ export default function LoginScreen({ users, onLoginSuccess, darkMode }: LoginSc
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={lockoutRemaining > 0}
-                className="w-full py-3 mt-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-widest text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={lockoutRemaining > 0 || isSubmitting}
+                className="w-full py-3 mt-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-widest text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
               >
-                <Lock className="w-4 h-4" />
-                Validar Identidad y Acceder
+                {isSubmitting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    Verificando...
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    Validar Identidad y Acceder
+                  </>
+                )}
               </button>
 
               <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-lg border border-slate-150 dark:border-slate-800/80 text-[10px]/relaxed text-slate-500 dark:text-slate-450 mt-4">

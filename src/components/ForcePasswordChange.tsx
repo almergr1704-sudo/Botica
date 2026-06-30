@@ -124,10 +124,11 @@ export default function ForcePasswordChange({
     });
   };
 
-  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter') {
       // Direct physical blockade to prevent any automatic form submit key bypass
       e.preventDefault();
+      e.stopPropagation();
       setErrorMessage('Por motivos de seguridad, el envío automático del formulario mediante la tecla Enter está deshabilitado. Debe usar el botón "Guardar Contraseña" de manera explícita.');
     }
   };
@@ -161,7 +162,7 @@ export default function ForcePasswordChange({
         </div>
 
         {/* Main Form */}
-        <form onSubmit={handleSave} onKeyDown={handleFormKeyDown} className="p-6 space-y-4">
+        <form onSubmit={(e) => e.preventDefault()} onKeyDown={handleFormKeyDown} className="p-6 space-y-4">
           
           {/* Validation Feedback message */}
           {errorMessage && (
@@ -337,7 +338,8 @@ export default function ForcePasswordChange({
           {/* Action Button Controls */}
           <div className="pt-4 border-t border-slate-150 dark:border-slate-800 flex flex-col gap-2">
             <button
-              type="submit"
+              type="button"
+              onClick={handleSave}
               disabled={!meetsAllRequirements || !isMatch || isReusingOld || !isCurrentPasswordCorrect}
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none uppercase tracking-wider text-[11px] cursor-pointer flex items-center justify-center gap-2"
             >
