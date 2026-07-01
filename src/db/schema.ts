@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, numeric, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, char, integer, boolean, timestamp, numeric, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // 1. Sucursales (Branches)
@@ -6,7 +6,7 @@ export const sucursales = pgTable("sucursales", {
   id: text("id").primaryKey(),
   nombre: text("nombre").notNull(),
   direccion: text("direccion"),
-  ubigeo: text("ubigeo"),
+  ubigeo: char("ubigeo", { length: 6 }),
   ciudad: text("ciudad"),
   telefono: text("telefono"),
   createdAt: timestamp("created_at").defaultNow(),

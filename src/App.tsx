@@ -292,6 +292,44 @@ export default function App() {
     localStorage.setItem('erp_sidebar_collapsed', JSON.stringify(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
+  // Detector de eventos del mouse/teclado en la SPA que revoque el token local (sigifar_session_token) tras 10 minutos de inactividad absoluta.
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resetInactivityTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        // Enforce session revocation due to 10 minutes of complete inactivity
+        logSecurityAction(
+          currentUser.id,
+          `${currentUser.nombre} (${currentUser.rol})`,
+          'Sesión revocada automáticamente por inactividad absoluta de 10 minutos.'
+        );
+        localStorage.removeItem('sigifar_session_token');
+        setCurrentUser(null);
+        alert('Sesión expirada: Ha superado el límite de 10 minutos de inactividad absoluta establecido por las directivas de control clínico y fiscal de DIGEMID/SUNAT.');
+      }, 10 * 60 * 1000); // 10 minutes (600,000 ms)
+    };
+
+    // Track standard user action events in SPA
+    const trackedEvents = ['mousemove', 'mousedown', 'keydown', 'click', 'scroll', 'touchstart'];
+    trackedEvents.forEach(event => {
+      window.addEventListener(event, resetInactivityTimer);
+    });
+
+    // Start tracking immediately upon login
+    resetInactivityTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      trackedEvents.forEach(event => {
+        window.removeEventListener(event, resetInactivityTimer);
+      });
+    };
+  }, [currentUser]);
+
   // Access control constraint: Forces Almacenero to valid routes if current user swaps
   useEffect(() => {
     if (currentUser && currentUser.rol === 'Almacenero') {

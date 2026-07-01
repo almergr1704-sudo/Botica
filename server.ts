@@ -4,11 +4,64 @@ import { createServer as createViteServer } from "vite";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { db } from "./src/db/index.ts";
-import { usuarios, auditorias } from "./src/db/schema.ts";
-import { eq } from "drizzle-orm";
+import { usuarios, auditorias, roles, sucursales } from "./src/db/schema.ts";
+import { eq, sql } from "drizzle-orm";
 
-// JWT Secret Key for Session Authentication
-const JWT_SECRET = process.env.JWT_SECRET || "sigifar_security_access_vault_token_99812";
+// JWT Secret Key for Session Authentication (CRITICAL SHUTDOWN CHECK)
+if (!process.env.JWT_SECRET) {
+  console.error("================================================================");
+  console.error("CRITICAL ERROR: JWT_SECRET environment variable is not defined!");
+  console.error("The application cannot start securely without a valid JWT_SECRET.");
+  console.error("Shutting down process to prevent insecure credentials fallbacks.");
+  console.error("================================================================");
+  process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// In-memory rate limiting map for login endpoint: max 5 attempts per minute per IP
+const loginAttemptsMap = new Map<string, { count: number; resetTime: number }>();
+function loginRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+  const now = Date.now();
+  const limit = 5;
+  const windowMs = 60000; // 1 minute
+
+  const record = loginAttemptsMap.get(ip);
+  if (!record) {
+    loginAttemptsMap.set(ip, { count: 1, resetTime: now + windowMs });
+    return next();
+  }
+
+  if (now > record.resetTime) {
+    record.count = 1;
+    record.resetTime = now + windowMs;
+    return next();
+  }
+
+  if (record.count >= limit) {
+    return res.status(429).json({
+      error: "TOO_MANY_REQUESTS",
+      message: "Límite de seguridad de 5 intentos por minuto excedido para esta dirección IP. Por favor espere antes de reintentar."
+    });
+  }
+
+  record.count += 1;
+  next();
+}
+
+// Exponential backoff database retry utility
+async function executeWithRetry<T>(operation: () => Promise<T>, retries = 3, delay = 500): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (retries <= 0) {
+      throw error;
+    }
+    console.warn(`[DATABASE RETRY] Connection failed. Retrying in ${delay}ms... (${retries} attempts left)`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return executeWithRetry(operation, retries - 1, delay * 2);
+  }
+}
 
 // In-memory user store for synchronization and DB-offline resilience fallback
 const fallbackUsers = [
@@ -69,8 +122,15 @@ const fallbackUsers = [
 // Helper to find a user securely in either database or fallback
 async function findUserByUsername(username: string) {
   const cleanUsername = username.trim().toLowerCase();
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const dbQuery = () => db.select().from(usuarios).where(eq(usuarios.username, cleanUsername)).limit(1);
+
   try {
-    const results = await db.select().from(usuarios).where(eq(usuarios.username, cleanUsername)).limit(1);
+    const results = isProduction
+      ? await executeWithRetry(dbQuery, 3, 500)
+      : await dbQuery();
+
     if (results && results.length > 0) {
       const dbUser = results[0];
       // Map to frontend user format
@@ -88,11 +148,19 @@ async function findUserByUsername(username: string) {
         email: dbUser.email || `${dbUser.username}@sigifar.pe`
       };
     }
-  } catch (error) {
-    console.warn("[DATABASE SEARCH FALLBACK] Cloud SQL not ready or unreachable. Querying offline memory registry.");
+  } catch (error: any) {
+    console.error("[DATABASE QUERY ERROR] Failed to consult central SQL Database:", error.message || error);
+    if (isProduction) {
+      throw new Error("El motor central de base de datos se encuentra fuera de línea o inaccesible. Reintentos con exponencial backoff agotados.");
+    }
   }
 
-  // Fallback to offline registry
+  // Strict prohibition of transient in-memory memory fallback in production
+  if (isProduction) {
+    return null;
+  }
+
+  // Fallback to offline registry ONLY in development mode
   const matched = fallbackUsers.find(u => u.username.toLowerCase() === cleanUsername);
   return matched ? { ...matched } : null;
 }
@@ -130,6 +198,38 @@ function isTemporaryPassword(password: string, username: string): boolean {
 
 async function seedUsersInDb() {
   try {
+    // 1. Ensure default roles exist in the database (resolving foreign key dependency)
+    const existingRoles = await db.select().from(roles).limit(1);
+    if (!existingRoles || existingRoles.length === 0) {
+      console.log("[DATABASE SEED] Seeding default system roles...");
+      await db.insert(roles).values([
+        { id: 1, nombre: "Administrador", descripcion: "Control absoluto del sistema ERP, configuraciones corporativas y reportes de auditoría global." },
+        { id: 2, nombre: "FarmaceuticoRegente", descripcion: "Encargado de la regencia de medicamentos, control de registros sanitarios y recetas médicas." },
+        { id: 3, nombre: "Almacenero", descripcion: "Gestión de almacenes, recepción de lotes de proveedores, movimientos de inventario y Kardex." },
+        { id: 4, nombre: "Cajero", descripcion: "Apertura, cuadre de caja, y procesamiento de boletas y facturas de venta al público." }
+      ]);
+      try {
+        await db.execute(sql`SELECT setval('roles_id_seq', (SELECT MAX(id) FROM roles))`);
+      } catch (seqErr: any) {
+        console.warn("[DATABASE SEED WARNING] Could not reset roles sequence id:", seqErr.message || seqErr);
+      }
+    }
+
+    // 2. Ensure default sucursal "SUC-CENTRAL" exists in the database
+    const existingBranches = await db.select().from(sucursales).where(eq(sucursales.id, "SUC-CENTRAL")).limit(1);
+    if (!existingBranches || existingBranches.length === 0) {
+      console.log("[DATABASE SEED] Seeding default branch SUC-CENTRAL...");
+      await db.insert(sucursales).values({
+        id: "SUC-CENTRAL",
+        nombre: "Sucursal Central - Lima Centro",
+        direccion: "Av. Tacna 420, Cercado de Lima",
+        ubigeo: "150101",
+        ciudad: "Lima",
+        telefono: "01-4283921"
+      });
+    }
+
+    // 3. Seed default users
     const results = await db.select().from(usuarios).where(eq(usuarios.username, "admin")).limit(1);
     if (!results || results.length === 0) {
       console.log("[DATABASE SEED] Seeding default users into SQL Database...");
@@ -187,7 +287,7 @@ async function seedUsersInDb() {
       console.log("[DATABASE SEED] Admin user already exists. Skipping SQL database seeding.");
     }
   } catch (err: any) {
-    console.warn("[DATABASE SEED WARNING] Could not seed users into SQL database. Database might be offline or initializing. Error:", err.message || err);
+    console.error("[DATABASE SEED ERROR] Could not seed users or dependencies into SQL database:", err.message || err);
   }
 }
 
@@ -253,8 +353,8 @@ async function startServer() {
 
   // --- API ROUTING LAYOUT ---
 
-  // 1. Auth Login Endpoint
-  app.post("/api/auth/login", async (req, res) => {
+  // 1. Auth Login Endpoint (secured with IP-based rate limiting)
+  app.post("/api/auth/login", loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "MISSING_FIELDS", message: "Debe ingresar usuario y contraseña." });
@@ -313,6 +413,7 @@ async function startServer() {
   app.post("/api/auth/change-password", requireAuth, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const currentUserContext = (req as any).user;
+    const isProduction = process.env.NODE_ENV === "production";
 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: "MISSING_FIELDS", message: "Debe proveer su contraseña actual y su nueva clave." });
@@ -340,41 +441,56 @@ async function startServer() {
     // Hash password with secure bcrypt algorithm
     const hashed = bcrypt.hashSync(newPassword, 10);
 
-    // Update in database
+    // Update in database with optional exponential backoff
     let databaseUpdated = false;
     try {
-      await db.update(usuarios)
-        .set({
-          password: hashed,
-          requiere_cambio_password: false,
-          fecha_cambio_password: new Date()
-        })
-        .where(eq(usuarios.id, currentUserContext.id));
-      databaseUpdated = true;
-      console.log(`[DATABASE PASSWORD UPDATE] Success for user id=${currentUserContext.id}`);
+      const dbUpdateOperation = async () => {
+        await db.update(usuarios)
+          .set({
+            password: hashed,
+            requiere_cambio_password: false,
+            fecha_cambio_password: new Date()
+          })
+          .where(eq(usuarios.id, currentUserContext.id));
 
-      // Log successful password change to database audit
-      await db.insert(auditorias).values({
-        id_usuario: currentUserContext.id,
-        usuario_nombre: `${currentUserContext.nombre} (${currentUserContext.rol})`,
-        modulo: "USUARIOS",
-        accion: "CAMBIO_CONTRASENA",
-        detalle: `Cambio obligatorio de contraseña de primer inicio de sesión completado con éxito. IP: ${req.ip || "127.0.0.1"}`,
-        fecha: new Date(),
-        ip_dispositivo: req.ip || "127.0.0.1"
-      });
-      console.log(`[DATABASE AUDIT LOG] Recorded password change event for ${currentUserContext.username}`);
+        // Log successful password change to database audit
+        await db.insert(auditorias).values({
+          id_usuario: currentUserContext.id,
+          usuario_nombre: `${currentUserContext.nombre} (${currentUserContext.rol})`,
+          modulo: "USUARIOS",
+          accion: "CAMBIO_CONTRASENA",
+          detalle: `Cambio obligatorio de contraseña de primer inicio de sesión completado con éxito. IP: ${req.ip || "127.0.0.1"}`,
+          fecha: new Date(),
+          ip_dispositivo: req.ip || "127.0.0.1"
+        });
+      };
+
+      if (isProduction) {
+        await executeWithRetry(dbUpdateOperation, 3, 500);
+      } else {
+        await dbUpdateOperation();
+      }
+      databaseUpdated = true;
+      console.log(`[DATABASE PASSWORD UPDATE & AUDIT] Success for user id=${currentUserContext.id}`);
     } catch (err: any) {
-      console.warn("[DATABASE UPDATE / AUDIT FAILED] Cloud SQL offline or unreachable. Error:", err.message || err);
+      console.error("[DATABASE UPDATE / AUDIT FAILED] Cloud SQL offline or unreachable. Error:", err.message || err);
+      if (isProduction) {
+        return res.status(503).json({
+          error: "DATABASE_UNAVAILABLE",
+          message: "No se pudo actualizar la contraseña. La base de datos central no está disponible y los reintentos con exponential backoff fueron agotados."
+        });
+      }
     }
 
-    // Update offline fallback registry to stay synchronized
-    const fallbackUserIdx = fallbackUsers.findIndex(u => u.username.toLowerCase() === currentUserContext.username.toLowerCase());
-    if (fallbackUserIdx !== -1) {
-      fallbackUsers[fallbackUserIdx].password = hashed;
-      fallbackUsers[fallbackUserIdx].requiere_cambio_password = false;
-      fallbackUsers[fallbackUserIdx].must_change_password = false;
-      fallbackUsers[fallbackUserIdx].password_changed = true;
+    // Update offline fallback registry to stay synchronized ONLY if not in production
+    if (!isProduction) {
+      const fallbackUserIdx = fallbackUsers.findIndex(u => u.username.toLowerCase() === currentUserContext.username.toLowerCase());
+      if (fallbackUserIdx !== -1) {
+        fallbackUsers[fallbackUserIdx].password = hashed;
+        fallbackUsers[fallbackUserIdx].requiere_cambio_password = false;
+        fallbackUsers[fallbackUserIdx].must_change_password = false;
+        fallbackUsers[fallbackUserIdx].password_changed = true;
+      }
     }
 
     // Issue NEW, unrestricted, full-access JWT session token
